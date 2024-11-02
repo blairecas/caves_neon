@@ -1,9 +1,7 @@
 **Caves of Noraf (Neon)**<br />
 Port of Caves of Noraf BK-0010 game by Alexander Tishin for Neon soviet computer<br />
-Original game was in unfinished state when this port was made. So code can be a bit dirty. Use it 'as it is'.
-Original for BK0010 is here: [https://sandro.pdp-11.ru/](https://sandro.pdp-11.ru/).
-
-Original BK version: [https://github.com/adw2ru/BK3D.DarkArena](https://github.com/adw2ru/BK3D.DarkArena)<br />
+Original game was in unfinished state when this port was made. So code can be a bit dirty. Use it 'as is'.<br />
+Original for BK0010 is here: [https://sandro.pdp-11.ru/](https://sandro.pdp-11.ru/).<br />
 <br />
 Files: [neon.dsk](/neon.dsk?raw=true) - disk image with game autostart, [release/caves.sav](/release/caves.sav?raw=true) - game itself<br />
 Neon emulator: [https://github.com/nzeemin/neonbtl](https://github.com/nzeemin/neonbtl)<br />

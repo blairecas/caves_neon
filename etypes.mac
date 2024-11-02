@@ -1,0 +1,701 @@
+;
+; All the enity types to encounter
+
+etypes_count = 61. ; count of entities to be considered for autoplacement
+etypes_list:
+; Empty Bottle (Broken bottle)
+	.word 20000 ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 90. ; depth
+	.byte 0. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_EMPTY, S_BOTTLE ; name
+	.word P_BOTTLE ; sprite
+	.byte 0., 5. ; count
+; Red Potion
+ET_RED_POTION = 1.
+	.word 20001 ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 90. ; depth
+	.byte 0. ; armor
+	.byte 4., 0., 1. ; health/magic/drop (empty bottle)
+	.byte S_RED, S_POTION ; name
+	.word P_RED_POTION ; sprite
+	.byte 1., 2. ; count
+; Blue Potion
+ET_BLUE_POTION = 2.
+	.word 20001 ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 90. ; depth
+	.byte 0. ; armor
+	.byte 0., 4., 1. ; health/magic/drop (empty bottle)
+	.byte S_BLUE, S_POTION ; name
+	.word P_BLUE_POTION ; sprite
+	.byte 1., 2. ; count
+; Bronze Dagger
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 10. ; depth
+	.byte 0. ; armor
+	.byte 1., 0., 1. ; dmg/stance
+	.byte S_BRONZE, S_DAGGER ; name
+	.word P_BRONZE_DAGGER ; sprite
+	.byte 0., 1. ; count
+; Bronze Sword
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 30. ; depth
+	.byte 0. ; armor
+	.byte 1., 2., 2. ; dmg/stance
+	.byte S_BRONZE, S_SWORD ; name
+	.word P_BRONZE_SWORD ; sprite
+	.byte -3., 0. ; count
+; Bronze Mace
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 20. ; depth
+	.byte 0. ; armor
+	.byte 2., 0., 3. ; dmg/stance
+	.byte S_BRONZE, S_MACE ; name
+	.word P_BRONZE_MACE ; sprite
+	.byte -3., 0. ; count
+; Iron Dagger
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 30. ; depth
+	.byte 0. ; armor
+	.byte 2., 1., 1. ; dmg/stance
+	.byte S_IRON, S_DAGGER ; name
+	.word P_IRON_DAGGER ; sprite
+	.byte -4., 0. ; count
+; Iron Sword
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 5., 40. ; depth
+	.byte 0. ; armor
+	.byte 2., 2., 2. ; dmg/stance
+	.byte S_IRON, S_SWORD ; name
+	.word P_IRON_SWORD ; sprite
+	.byte -5., 0. ; count
+; Iron Mace
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 10., 50. ; depth
+	.byte 0. ; armor
+	.byte 3., 0., 3. ; dmg/stance
+	.byte S_IRON, S_MACE ; name
+	.word P_IRON_MACE ; sprite
+	.byte -5., 0. ; count
+; Steel Dagger
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 3., 50. ; depth
+	.byte 0. ; armor
+	.byte 4., 1., 1. ; dmg/stance
+	.byte S_STEEL, S_DAGGER ; name
+	.word P_STEEL_DAGGER ; sprite
+	.byte -5., 0. ; count
+; Steel Sword
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 10., 90. ; depth
+	.byte 0. ; armor
+	.byte 4., 4., 2. ; dmg/stance
+	.byte S_STEEL, S_SWORD ; name
+	.word P_STEEL_SWORD ; sprite
+	.byte -4., 0. ; count
+; Steel Mace
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 10., 90. ; depth
+	.byte 0. ; armor
+	.byte 5., 2., 3. ; dmg/stance
+	.byte S_STEEL, S_MACE ; name
+	.word P_STEEL_MACE ; sprite
+	.byte -4., 0. ; count
+; Quartz Blade
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 45., 99. ; depth
+	.byte 0. ; armor
+	.byte 6., 6., 2. ; dmg/stance
+	.byte S_QUARTZ, S_BLADE ; name
+	.word P_QUARTZ_BLADE ; sprite
+	.byte -5., 0. ; count
+; Dnatog Blade
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 75., 99. ; depth
+	.byte 0. ; armor
+	.byte 8., 6., 2. ; dmg/stance
+	.byte S_DNATOG, S_BLADE ; name
+	.word P_DNATOG_BLADE ; sprite
+	.byte -5., 0. ; count
+; Dnatog Mauler
+	.word 20004 ; flags
+	.byte 0., 0. ; hp
+	.byte 75., 99. ; depth
+	.byte 0. ; armor
+	.byte 10., 2., 3. ; dmg/stance
+	.byte S_DNATOG, S_MAULER ; name
+	.word P_DNATOG_MAULER ; sprite
+	.byte -5., 0. ; count
+; Bronze Boots
+	.word 20020 ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 30. ; depth
+	.byte 1. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_BRONZE, S_BOOTS ; name
+	.word P_BRONZE_BOOTS ; sprite
+	.byte -5., 0. ; count
+; Iron Boots
+	.word 20020 ; flags
+	.byte 0., 0. ; hp
+	.byte 3., 50. ; depth
+	.byte 2. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_IRON, S_BOOTS ; name
+	.word P_IRON_BOOTS ; sprite
+	.byte -5., 0. ; count
+; Steel Boots
+	.word 20020 ; flags
+	.byte 0., 0. ; hp
+	.byte 10., 90. ; depth
+	.byte 3. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_STEEL, S_BOOTS ; name
+	.word P_STEEL_BOOTS ; sprite
+	.byte -5., 0. ; count
+; Imp Boots
+	.word 30020 ; flags
+	.byte 0., 0. ; hp
+	.byte 20., 50. ; depth
+	.byte 4. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_IMP, S_BOOTS ; name
+	.word P_SCALY_BOOTS ; sprite
+	.byte -5., 0. ; count
+; Dnatog Boots
+	.word 34020 ; flags
+	.byte 0., 0. ; hp
+	.byte 40., 90. ; depth
+	.byte 5. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_DNATOG, S_BOOTS ; name
+	.word P_DNATOG_BOOTS ; sprite
+	.byte -5., 0. ; count
+; Ashen Boots
+	.word 34020 ; flags
+	.byte 0., 0. ; hp
+	.byte 70., 99. ; depth
+	.byte 6. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_ASHEN, S_BOOTS ; name
+	.word P_ASHEN_BOOTS ; sprite
+	.byte -10., 0. ; count
+; Bronze Armor
+	.word 20010 ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 30. ; depth
+	.byte 2. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_BRONZE, S_ARMOR ; name
+	.word P_BRONZE_ARMOR ; sprite
+	.byte -5., 0. ; count
+; Iron Armor
+	.word 20010 ; flags
+	.byte 0., 0. ; hp
+	.byte 3., 50. ; depth
+	.byte 4. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_IRON, S_ARMOR ; name
+	.word P_IRON_ARMOR ; sprite
+	.byte -5., 0. ; count
+; Steel Armor
+	.word 20010 ; flags
+	.byte 0., 0. ; hp
+	.byte 10., 90. ; depth
+	.byte 6. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_STEEL, S_ARMOR ; name
+	.word P_STEEL_ARMOR ; sprite
+	.byte -5., 0. ; count
+; Scaly Armor
+	.word 20010 ; flags
+	.byte 0., 0. ; hp
+	.byte 20., 50. ; depth
+	.byte 8. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_SCALY, S_ARMOR ; name
+	.word P_SCALY_ARMOR ; sprite
+	.byte -5., 0. ; count
+; Dnatog Armor
+	.word 20010 ; flags
+	.byte 0., 0. ; hp
+	.byte 40., 99. ; depth
+	.byte 10. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_DNATOG, S_ARMOR ; name
+	.word P_DNATOG_ARMOR ; sprite
+	.byte -5., 0. ; count
+; Torch 
+ET_TORCH = 26.
+	.word 20002 ; flags
+	.byte 1., 2. ; hp
+	.byte 1., 90. ; depth
+	.byte 0. ; armor
+	.byte 8., 0., 0. ; dmg/agg
+	.byte S_TORCH, 0 ; name
+	.word P_TORCH ; sprite
+	.byte 1., 2. ; count
+; Oil Lamp
+	.word 20002 ; flags
+	.byte 3., 7. ; hp
+	.byte 1., 35. ; depth
+	.byte 0. ; armor
+	.byte 5., 0., 0. ; dmg/agg
+	.byte S_OIL, S_LAMP ; name
+	.word P_OIL_LAMP ; sprite
+	.byte -4., 0. ; count
+; Naphta Lamp
+	.word 20002 ; flags
+	.byte 10., 8. ; hp
+	.byte 30., 70. ; depth
+	.byte 0. ; armor
+	.byte 10., 0., 0. ; dmg/agg
+	.byte S_NAPHTA, S_LAMP ; name
+	.word P_NAPHTA_LAMP ; sprite
+	.byte -4., 0. ; count
+; Bone Torch
+	.word 20002 ; flags
+	.byte 255., 0. ; hp
+	.byte 60., 90. ; depth
+	.byte 0. ; armor
+	.byte 31., 0., 0. ; dmg/agg
+	.byte S_BONE, S_TORCH ; name
+	.word P_BONE_TORCH ; sprite
+	.byte -4., 0. ; count
+; Rat
+ET_RAT = 30.
+	.word 400 ; flags
+	.byte 1., 1. ; hp
+	.byte 1., 99. ; depth
+	.byte 0. ; armor
+	.byte 1., 1., 0. ; dmg/agg
+	.byte S_RAT, 0 ; name
+	.word P_RAT ; sprite
+	.byte 1., 2. ; count
+; Snake 
+ET_SNAKE = 31.
+	.word 400 ; flags
+	.byte 2., 2. ; hp
+	.byte 1., 25. ; depth
+	.byte 1. ; armor
+	.byte 1., 2., 0. ; dmg/agg
+	.byte S_SNAKE, 0 ; name
+	.word P_SNAKE ; sprite
+	.byte 0., 2. ; count
+; Cave Spider
+ET_SPIDER = 32.
+	.word 400 ; flags
+	.byte 3., 1. ; hp
+	.byte 1., 60. ; depth
+	.byte 0. ; armor
+	.byte 1., 1., -1. ; dmg/agg
+	.byte S_CAVE, S_SPIDER ; name
+	.word P_CAVE_SPIDER ; sprite
+	.byte 0., 1. ; count
+; Cave Hog
+ET_CAVE_HOG = 33.
+	.word 400 ; flags
+	.byte 2., 3. ; hp
+	.byte 5., 99. ; depth
+	.byte 1. ; armor
+	.byte 1., 2., 8. ; dmg/agg
+	.byte S_CAVE, S_HOG ; name
+	.word P_CAVE_HOG ; sprite
+	.byte 0., 1. ; count
+; Blue Worm
+ET_BLUE_WORM = 34.
+	.word 400 ; flags
+	.byte 1., 1. ; hp
+	.byte 1., 99. ; depth
+	.byte 0. ; armor
+	.byte 1., 1., 0. ; dmg/agg
+	.byte S_BLUE, S_WORM ; name
+	.word P_BLUE_WORM ; sprite
+	.byte 0., 2. ; count
+; Lizard 
+ET_LIZARD = 35.
+	.word 400 ; flags
+	.byte 1., 1. ; hp
+	.byte 2., 53. ; depth
+	.byte 0. ; armor
+	.byte 1., 1., 0. ; dmg/agg
+	.byte S_LIZARD, 0 ; name
+	.word P_LIZARD ; sprite
+	.byte 0., 3. ; count
+; Kobold 
+ET_KOBOLD = 36.
+	.word 400 + is_humanoid ; flags
+	.byte 5., 1. ; hp
+	.byte 5., 41. ; depth
+	.byte 1. ; armor
+	.byte 1., 2., 10. ; dmg/agg
+	.byte S_KOBOLD, 0 ; name
+	.word P_KOBOLD ; sprite
+	.byte 0., 2. ; count
+; Flesh Golem
+	.word 400 + is_humanoid ; flags
+	.byte 15., 5. ; hp
+	.byte 10., 65. ; depth
+	.byte 0. ; armor
+	.byte 2., 1., 5. ; dmg/agg
+	.byte S_FLESH, S_GOLEM ; name
+	.word P_FLESH_GOLEM ; sprite
+	.byte 0., 1. ; count
+; Zombie 
+	.word 400 + is_humanoid ; flags
+	.byte 10., 3. ; hp
+	.byte 15., 99. ; depth
+	.byte 2. ; armor
+	.byte 1., 1., 15. ; dmg/agg
+	.byte S_ZOMBIE, 0 ; name
+	.word P_ZOMBIE ; sprite
+	.byte 0., 2. ; count
+; Stone Golem
+	.word 400 + is_humanoid ; flags
+	.byte 25., 5. ; hp
+	.byte 23., 97. ; depth
+	.byte 5. ; armor
+	.byte 2., 2., 5. ; dmg/agg
+	.byte S_STONE, S_GOLEM ; name
+	.word P_STONE_GOLEM ; sprite
+	.byte 0., 1. ; count
+; Bone Cripple
+ET_BONE_CRIPPLE = 40.
+	.word 400 + is_humanoid ; flags
+	.byte 7., 3. ; hp
+	.byte 25., 97. ; depth
+	.byte 0. ; armor
+	.byte 1., 1., 4. ; dmg/agg
+	.byte S_BONE, S_CRIPPLE ; name
+	.word P_BONE_CRIPPLE ; sprite
+	.byte 0., 2. ; count
+; Bone Creeper
+ET_BONE_CREEPER = 41.
+	.word 400 ; flags
+	.byte 10., 3. ; hp
+	.byte 41., 97. ; depth
+	.byte 1. ; armor
+	.byte 1., 2., 6. ; dmg/agg
+	.byte S_BONE, S_CREEPER ; name
+	.word P_BONE_CREEPER ; sprite
+	.byte 0., 1. ; count
+; Scaly Worm
+ET_SCALY_WORM = 42.
+	.word 400 ; flags
+	.byte 3., 1. ; hp
+	.byte 42., 72. ; depth
+	.byte 0. ; armor
+	.byte 1., 1., 0. ; dmg/agg
+	.byte S_SCALY, S_WORM ; name
+	.word P_SCALY_WORM ; sprite
+	.byte 1., 5. ; count
+; Scaly Rat
+ET_SCALY_RAT = 43.
+	.word 400 ; flags
+	.byte 3., 1. ; hp
+	.byte 42., 72. ; depth
+	.byte 0. ; armor
+	.byte 1., 1., 0. ; dmg/agg
+	.byte S_SCALY, S_RAT ; name
+	.word P_SCALY_RAT ; sprite
+	.byte 2., 2. ; count
+; Scaly Lizard
+ET_SCALY_LIZARD = 44.
+	.word 400 ; flags
+	.byte 3., 1. ; hp
+	.byte 54., 72. ; depth
+	.byte 0. ; armor
+	.byte 1., 1., 0. ; dmg/agg
+	.byte S_SCALY, S_LIZARD ; name
+	.word P_SCALY_LIZARD ; sprite
+	.byte 2., 3. ; count
+; Bone Warrior
+ET_BONE_WARRIOR = 45.
+	.word 400 + is_humanoid ; flags
+	.byte 15., 5. ; hp
+	.byte 57., 97. ; depth
+	.byte 3. ; armor
+	.byte 2., 1., 10. ; dmg/agg
+	.byte S_BONE, S_WARRIOR ; name
+	.word P_BONE_WARRIOR ; sprite
+	.byte 0., 1. ; count
+; Bone Golem
+ET_BONE_GOLEM = 46.
+	.word 400 + is_humanoid ; flags
+	.byte 20., 5. ; hp
+	.byte 65., 67. ; depth
+	.byte 1. ; armor
+	.byte 2., 2., 5. ; dmg/agg
+	.byte S_BONE, S_GOLEM ; name
+	.word P_BONE_GOLEM ; sprite
+	.byte 0., 1. ; count
+; Scaly Golem
+ET_SCALY_GOLEM = 47.
+	.word 400 + is_humanoid ; flags
+	.byte 20., 5. ; hp
+	.byte 71., 72. ; depth
+	.byte 2. ; armor
+	.byte 2., 2., 5. ; dmg/agg
+	.byte S_SCALY, S_GOLEM ; name
+	.word P_SCALY_GOLEM ; sprite
+	.byte 0., 1. ; count
+; Fire Worm
+ET_FIRE_WORM = 48.
+	.word 400 + is_caster + is_fire_element ; flags
+	.byte 4., 1. ; hp
+	.byte 73., 99. ; depth
+	.byte 1. ; armor
+	.byte 2., 1., 0. ; dmg/agg
+	.byte S_FIRE, S_WORM ; name
+	.word P_FIRE_WORM ; sprite
+	.byte 1., 5. ; count
+; Imp 
+ET_IMP = 49.
+	.word 400 + is_humanoid + is_caster + is_fire_element ; flags
+	.byte 4., 1. ; hp
+	.byte 73., 98. ; depth
+	.byte 1. ; armor
+	.byte 2., 1., 15. ; dmg/agg
+	.byte S_IMP, 0 ; name
+	.word P_IMP ; sprite
+	.byte 1., 1. ; count
+; Fire Golem
+	.word 400 + is_humanoid ; flags
+	.byte 25., 5. ; hp
+	.byte 74., 76. ; depth
+	.byte 3. ; armor
+	.byte 3., 2., 12. ; dmg/agg
+	.byte S_FIRE, S_GOLEM ; name
+	.word P_FIRE_GOLEM ; sprite
+	.byte 0., 1. ; count
+; Bone Priest
+	.word is_monster+ is_caster + is_humanoid + is_acid_element  ; flags
+	.byte 10., 5. ; hp
+	.byte 33., 74. ; depth
+	.byte 3. ; armor
+	.byte 2., 3., 10. ; dmg/agg
+	.byte S_BONE, S_PRIEST ; name
+	.word P_BONE_PRIEST ; sprite
+	.byte 0., 1. ; count
+; Fire Lizard
+	.word 400  + is_caster + is_fire_element ; flags
+	.byte 4., 1. ; hp
+	.byte 75., 99. ; depth
+	.byte 1. ; armor
+	.byte 3., 1., 0. ; dmg/agg
+	.byte S_FIRE, S_LIZARD ; name
+	.word P_FIRE_LIZARD ; sprite
+	.byte 1., 3. ; count
+; Fire Priest
+	.word is_monster+ is_caster + is_humanoid + is_fire_element ; flags
+	.byte 10., 5. ; hp
+	.byte 95., 97. ; depth
+	.byte 4. ; armor
+	.byte 3., 5., 10. ; dmg/agg
+	.byte S_FIRE, S_PRIEST ; name
+	.word P_FIRE_PRIEST ; sprite
+	.byte 1., 0. ; count
+; Fake egg
+ET_FAKE_EGG = 54.
+	.word is_dead + is_egg + is_sigil ; flags
+	.byte 100., 0. ; hp
+	.byte 5., 90. ; depth
+	.byte 0. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_JAGGED, S_EGG ; name
+	.word P_FAKEEGGS ; sprite
+	.byte 1., 0. ; count
+; Sigils
+
+ET_SIGIL_ICE = 55.
+	.word is_dead + is_sigil ; flags
+	.byte 0., 0. ; hp
+	.byte 25., 99. ; depth
+	.byte 0. ; type
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_ICE, S_SIGIL ; name
+	.word P_SIGIL_ICE ; sprite
+	.byte 1., 0. ; count
+
+ET_SIGIL_FIRE = 56.
+	.word is_dead + is_sigil ; flags
+	.byte 0., 0. ; hp
+	.byte 15., 99. ; depth
+	.byte 1. ; type
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_FIRE, S_SIGIL ; name
+	.word P_SIGIL_FIRE ; sprite
+	.byte 1., 0. ; count
+
+ET_SIGIL_BLOOD = 57.
+	.word is_dead + is_sigil ; flags
+	.byte 0., 0. ; hp
+	.byte 35., 99. ; depth
+	.byte 2. ; type
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_BLOOD, S_SIGIL ; name
+	.word P_SIGIL_BLOOD ; sprite
+	.byte 1., 0. ; count
+
+ET_SIGIL_DEATH = 58.
+	.word is_dead + is_sigil ; flags
+	.byte 0., 0. ; hp
+	.byte 65., 99. ; depth
+	.byte 3. ; type
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_DEATH, S_SIGIL ; name
+	.word P_SIGIL_DEATH ; sprite
+	.byte 1., 0. ; count
+
+ET_SIGIL_VOID = 59.
+	.word is_dead + is_sigil ; flags
+	.byte 0., 0. ; hp
+	.byte 77., 99. ; depth
+	.byte 4. ; type
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_VOID, S_SIGIL ; name
+	.word P_SIGIL_VOID ; sprite
+	.byte 1., 0. ; count
+
+; Ash cloud (remains of sigils victim)
+ET_ASH_CLOUD = 60.
+	.word is_monster + is_explosive ; flags
+	.byte 5., 120. ; life time + variation
+	.byte 85., 99. ; depth
+	.byte 0 ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_ASH, S_CLOUD ; name
+	.word P_ASH_CLOUD ; sprite
+	.byte 1., 0. ; count
+
+; Final boss
+ET_FINALBOSS = 61.
+	.word is_monster + is_caster + is_humanoid ; flags
+	.byte 100., 0. ; hp
+	.byte 99., 99. ; depth
+	.byte 99. ; armor
+	.byte 3., 5., 100. ; dmg/agg
+	.byte S_FRAIL, S_IMMORTAL ; name
+	.word P_FINAL_BOSS ; sprite
+	.byte 1., 0. ; count
+ET_JAGGED_CROWN = 62.
+; The Jagged Crown, a cursed prize
+	.word is_dead + is_sigil ; flags; technically, Crown is the Sigil, since it is a useable magical item
+	.byte 0., 0. ; hp
+	.byte 0., 0. ; depth
+	.byte 6. ; type
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_JAGGED, S_CROWN ; name
+	.word P_CROWN ; sprite
+	.byte 0., 0. ; count
+; Explosion
+ET_EXPLOSION = 63.
+	.word is_monster + is_explosive ; flags
+	.byte 2., 0. ; hp
+	.byte 0, 0 ; depth
+	.byte 0 ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_EMPTY, S_EMPTY ; name
+	.word P_EXPLOSION ; sprite
+	.byte 0., 0. ; count
+; Acid cloud
+ET_ACID_CLOUD = 64.
+	.word is_monster + is_explosive + is_acid_element; flags
+	.byte 7., 3. ; summoning cost (cooldown of sorts) base + variation
+	.byte 0, 0 ; depth
+	.byte 0 ; armor
+	.byte 2., 5., 100. ; dmg/agg
+	.byte S_ACID, S_CLOUD ; name
+	.word P_ACID_CLOUD ; sprite
+	.byte 0., 0. ; count
+; Fire cloud
+ET_FIRE_CLOUD = 65.
+	.word is_monster + is_explosive + is_fire_element ; flags
+	.byte 10., 3. ; cast cost base + variation
+	.byte 0, 0 ; depth
+	.byte 0 ; armor
+	.byte 5., 5., 100. ; dmg/agg
+	.byte S_FIRE, S_CLOUD ; name
+	.word P_FIRE_CLOUD ; sprite
+	.byte 0., 0. ; count
+; Gems (a single template)
+ET_GEM = 66.
+	.word is_dead + is_egg + is_armor ; flags
+	.byte 0., 0. ; hp
+	.byte 1., 90. ; depth
+	.byte 0. ; armor
+	.byte 0., 0., 0. ; dmg/agg
+	.byte S_RUBY, S_ ; name
+	.word P_GEM ; sprite
+	.byte 0., 0. ; count
+; Eggs
+ET_EGGS = 67.
+etypes_eggs:
+; Ruby egg
+	.word is_dead + is_egg ; flags
+	.byte 100., 0. ; hp
+	.byte 75., 99. ; depth
+	.byte 0. ; type
+	.byte 0., 0., 1 ; dmg/bitmask
+	.byte S_RUBY, S_EGG ; name
+	.word P_EGGS + 0 ; sprite
+	.byte 1., 0. ; count
+; Beryl egg
+	.word is_dead + is_egg ; flags
+	.byte 100., 0. ; hp
+	.byte 53., 99. ; depth
+	.byte 1. ; type
+	.byte 0., 0., 2 ; dmg/bitmask
+	.byte S_BERYL, S_EGG ; name
+	.word P_EGGS + 1 ; sprite
+	.byte 1., 0. ; count
+; Quartz egg
+	.word is_dead + is_egg ; flags
+	.byte 100., 0. ; hp
+	.byte 5., 99. ; depth
+	.byte 2. ; type
+	.byte 0., 0., 4 ; dmg/bitmask
+	.byte S_QUARTZ, S_EGG ; name
+	.word P_EGGS + 2 ; sprite
+	.byte 1., 0. ; count
+; Topaz egg (yellow)
+	.word is_dead + is_egg ; flags
+	.byte 100., 0. ; hp
+	.byte 33., 99. ; depth
+	.byte 3. ; type
+	.byte 0., 0., 10 ; dmg/bitmask
+	.byte S_TOPAZ, S_EGG ; name
+	.word P_EGGS + 3 ; sprite
+	.byte 1., 0. ; count
+; Glass egg (green)
+	.word is_dead + is_egg ; flags
+	.byte 100., 0. ; hp
+	.byte 10., 99. ; depth
+	.byte 4. ; type
+	.byte 0., 0., 20 ; dmg/bitmask
+	.byte S_GLASS, S_EGG ; name
+	.word P_EGGS + 4 ; sprite
+	.byte 1., 0. ; count
+; Bone egg (green->cyan)
+	.word is_dead + is_egg ; flags
+	.byte 100., 0. ; hp
+	.byte 99., 99. ; depth
+	.byte 5. ; type
+	.byte 0., 0., 40 ; dmg/bitmask
+	.byte S_BONE, S_EGG ; name
+	.word P_EGGS + 5 ; sprite
+	.byte 1., 0. ; count

@@ -1,0 +1,333 @@
+;
+; Player data and specific functions
+;
+
+player_init$:
+	; TODO pack this somehow?
+	mov #ent_player, r5
+	mov #'@ + map_red, ent_sprite(r5)
+	movb #1, ent_basedmg(r5)
+	movb #1, ent_dmgrange(r5)
+	mov #is_player, (r5)+ ; flags
+	mov #10, (r5)+ ; hp
+	mov #map_side / 2, r1
+	movb r1, (r5)+ ; x
+	movb r1, (r5)+ ; y
+	; default equipment
+	mov r1, r2
+	mov #ET_TORCH, r3
+	call @#ent_create_bytype3
+	mov r3, r0
+	call @#inv_add
+	jmp @#update_player_image$
+	;ret
+
+;
+; Handles death of the main hero
+;
+; r3 -- attacker ptr
+; r4 -- entity ptr
+; r0 -- remaining HP (???)
+;
+; should exit by retreg!
+player_die:
+	clr @#player_hp
+	; drop loot
+	; FIXME first item is dropped under the player's corpse
+	mov #inv_slots, r1
+1$:	mov r1, r0
+	call @#inv_drop
+	sob r1, 1$
+	; mark as dead
+	bis #is_dead, @#ent_player
+	mov #P_PLAYER_CORPSE, @#ent_player + ent_sprite
+	mov r3, r0
+	call @#notify_killed
+	jmp @#retreg
+;
+; Uses the consumable item; only health/magic potions so far
+;
+; r1 -- pointer to the item description
+;
+; Returns:
+; r0 -- message to display
+;
+player_consume:
+	jsr r5, @#saveregs
+	clr @sp
+	mov #cons_descs, r1
+1$:	mov (r1)+, r2 ; offset in the entity
+	beq 9$
+	add 2(sp), r2 ; address of delta value
+	mov (r1)+, r3 ; addr of current value
+	mov (r1)+, r4 ; addr of max value
+	mov (r1)+, r5 ; addr of message
+	cmp @r3, @r4
+	bhis 1$ ; cannot boost any further
+	movb @r2, r0
+	beq 1$ ; nothing for this
+	mov r5, @sp ; store message
+	add @r3, r0 ; apply
+	cmp r0, @r4
+	blos 2$
+	mov @r4, r0
+2$:	mov r0, @r3
+	br 1$
+9$:	sec
+	mov @sp, r0 ; unlike tst, keeps the carry flag
+	bne 99$
+	mov #s_notnow, @sp
+	ccc
+99$:	jmp @#retreg
+
+; descriptions of consumable items
+; offset, value, max value, message -- 8 bytes in total
+cons_descs:
+	.word ent_heal, player_hp, player_maxhp, s_heal ; HP
+	.word ent_recharge, player_mp, player_maxmp, s_recharge ; MP
+	.word 0
+;
+; Wears the given item; it is assumed that it is a light, and is in player's posession
+;
+; r0 -- pointer to the item description
+;
+player_use_light:
+	mov r5, -(sp)
+	mov #player_lamp, r5
+	br player_equip$$
+;
+; Wears the given boots; it is assumed that they ARE boots, and in player's posession
+;
+; r0 -- pointer to the item description
+;
+player_wear_boots:
+	mov r5, -(sp)
+	mov #player_boots, r5
+	br player_equip$$
+;
+; Wears the given item; it is assumed that it is an armor, and is in player's posession
+;
+; r0 -- pointer to the item description
+;
+player_wear_armor:
+	mov r5, -(sp)
+	mov #player_armor_item, r5
+	br player_equip$$
+;
+; Wields the given item; it is assumed that it is a weapon, and is in player's posession
+;
+; r0 -- pointer to the item description; will go back to fists if 0
+;
+player_wield:
+	mov r5, -(sp)
+	mov #player_weapon, r5
+;
+; r0 -- pointer to the item description; will simply remove the item in use if 0
+; r5 -- pointer to the usage (link) slot
+; stack -- old r5 to restore
+;
+player_equip$$:
+	mov r2, -(sp)
+	; first, remove the item from the slot, if any
+	mov @r5, r2
+	beq 1$
+	bic #is_inuse, @r2
+1$:	mov r0, @r5
+	beq 2$
+	bis #is_inuse, @r0
+2$:	mov (sp)+, r2
+	mov (sp)+, r5
+	;br player_recalc_stats
+;
+; Recalculates player status by basic parameters
+;
+player_recalc_stats:
+	jsr r5, @#saveregs
+	mov #ent_player, r5
+	; damage, based on weapon
+	mov #1, r2
+	mov r2, r1
+	clr r3
+	mov @#player_weapon, r0
+	beq 1$ ; no weapon
+	movb ent_basedmg(r0), r2
+	movb ent_dmgrange(r0), r1
+	movb ent_stance(r0), r3
+1$:	movb r2, ent_basedmg(r5)
+	movb r1, ent_dmgrange(r5)
+	mov r3, @#player_stance
+	; armor
+	clr r2 ; no armor by default
+	mov @#player_armor_item, r0
+	beq 2$ ; no armor
+	movb ent_armor(r0), r2
+2$:	mov @#player_boots, r0
+	beq 3$ ; no boots
+	movb ent_armor(r0), r1
+	add r1, r2
+3$:	movb r2, ent_armor(r5)
+	mov r2, @#player_armor ; copy for the sidebar
+	; light
+	; FIXME force the view recalc
+	mov #1, r2 ; base light
+	mov @#player_lamp, r0
+	beq 4$ ; no artifical light
+	movb ent_basedmg(r0), r2 ; light radius is stored in the base damage field
+4$:	mov r2, @#player_lightradius
+	; player looks could have changed
+	call @#update_player_image$
+	jmp @#retreg
+;
+; Uses a given Sigil
+; r0 -- ref
+;
+player_use_sigil:
+	jsr r5, @#saveregs
+	mov ent_egg_sigil_type(r0), r0
+	asl r0
+	mov sigils(r0), -(sp)
+	mov #ent_pool, r1
+	mov #ent_poolsize, r2
+1$:	cmp #0, @#player_mp
+	bge 0$
+	bit #is_dead + is_hidden, @r1
+	bne 2$
+	cmpb ent_armor(r1), #50. ; boss check (no flag)
+	bhi 2$
+	dec @#player_mp
+	call @0(sp)
+2$:	add #ent_size, r1
+	sob r2, 1$ ; do not change -- FC depends on it
+0$:	tst (sp)+
+	jmp @#retreg
+sigils:	.word use_ice, use_fire, use_blood, use_death, use_void
+use_ice:
+	movb #-100, ent_aggression(r1)
+	mov #1, ent_hp_w(r1)
+	ret
+use_fire:
+	mov #ET_FIRE_CLOUD, r3
+	mov #ent_player, r4
+	mov r1, ent_enemy(r4)
+	call @#mons_spawn
+rt1$:	mov #1, r2 ; HACK to limit cast to 1 Fire Cloud or whatever
+rt$:	ret
+use_blood:
+	add #2, @#player_hp
+	sub #2, ent_hp_w(r1)
+	bhi rt$
+use_death:
+	mov r1, -(sp)
+	mov r2, -(sp)
+	movb ent_y(r1), r2
+	movb ent_x(r1), r1
+	mov #ET_ASH_CLOUD, r3
+	call @#ent_create_bytype3
+	mov (sp)+, r2
+	mov (sp)+, r1
+	clr r3
+	mov r1, r4
+	jmp @#mons_die
+use_void:
+	clr @r1
+	mov #0, @#player_mp ; FIXME should be 1; changed for 23.3.23 release when it doesn't disappear
+	cmp @#map_depth, #99. ; on level 99, kill only minions
+	blt rt$
+	mov #1, @#player_hp
+	call @#ent_purge ; on all other levels, remove everything and exit
+	br rt1$
+player_notify_take:
+	bit #is_sigil, @r0
+	beq 0$
+	movb ent_egg_sigil_type(r0), r0
+	movb sig_masks(r0), r0
+	bitb r0, @#player_touched_sigils
+	bne 0$
+	bisb r0, @#player_touched_sigils
+	inc @#player_maxmp
+	mov @#player_maxmp, @#player_mp
+1$:	trap $_update_sidebar
+0$:	ret
+ret_sidebar = 1$
+; TODO unify this with other masks
+sig_masks:
+	.byte 1, 2, 4, 10, 20, 40, 100, 200
+;
+; Revalidates active (used) object list
+; TBD include into player_recalc_stats?
+;
+;
+player_notify_remove:
+	jsr r5, @#saveregs
+	mov #player_using_refs + <player_using_arrlen * 2>, r5
+	mov #player_using_arrlen, r2
+1$:	cmp -(r5), r0
+	bne 2$
+	clr @r5
+2$:	sob r2, 1$
+	jmp @#retreg
+;
+; r0 -- egg to be destroyed
+;
+; TODO reordering can save about 4 bytes
+egg_crush:
+	bit #is_armor, @r0 ; FIXME gems should at least have their own flag name
+	bne 10$
+	mov #s_youcrush, @#prompt
+	movb ent_x(r0), r1
+	movb ent_y(r0), r2
+	bit #is_sigil, @r0 ; fake eggs are marked as sigils
+	beq 1$
+	clr @r0 ; remove The Egg
+	mov #ET_SPIDER, r3
+	call @#ent_create_bytype3
+	mov r3, r0
+	call @#map_dropnear
+	ret
+1$:	inc @#player_maxhp
+	inc @#player_hp
+	bisb ent_eggmask(r0), @#player_eggs
+	clr @r0 ; remove The Egg
+	mov #s_horrible, @#prompt
+	call @#gen_bloodspot
+	trap $_update_sidebar
+	cmpb @#player_eggs, #77
+	beq 2$ ; Main boss is killed
+	ret
+10$:	inc @#player_gems
+	clr @r0
+	mov #s_collect, @#prompt
+	trap $_update_sidebar
+	ret
+; Finally. He is dead.
+2$:	jmp @#ending_stub$
+player_gems:
+	.word 0
+player_eggs: ; the eggs collected so far
+	.byte 0
+player_touched_sigils: ; the sigils collected at least once
+	.byte 0
+player_stance:
+	.word 0
+player_maxhp:
+	.word 12.
+player_mp:
+	.word 0
+player_maxmp:
+	.word 1
+; duplicate for the sidebar script
+player_armor:
+	.word 0
+player_lightradius:
+	.word 1
+; refs
+player_using_refs: ; array of active objects begins here
+player_using_arrlen = 4
+player_weapon:
+	.word 0
+player_armor_item:
+	.word 0
+player_boots:
+	.word 0
+player_lamp:
+	.word 0

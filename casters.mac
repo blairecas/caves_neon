@@ -1,0 +1,58 @@
+;
+; magic implementation for casters (Bone Priests, etc., including player)
+;
+
+ai_cast_cooldown:
+	.word 3
+;
+; Tests for visbility of the target and will to attack
+;   r0 -- possible target
+;   r4 -- ptr to caster
+;
+; Returns:
+;   r0 -- spell ID (what to spawn)
+;
+ai_consider_casting_:
+	jsr r5, @#saveregs
+	bit #is_caster, @r4
+	beq 0$ ; not a caster
+	dec @#ai_cast_cooldown
+	bpl 0$
+	clr @#ai_cast_cooldown ; Protect from overflow (low chance, but could be triggered
+	mov ent_enemy(r4), r0
+	beq 0$ ; nobody to target
+	bit #is_dead, @r0
+	beq 1$
+	clr ent_enemy(r4)
+	br 0$
+; TODO what if both are selected? special spell?
+1$:	bit #is_fire_element + is_acid_element, @r4
+	beq 10$ ; summoner
+	; a hack for visibility testing: if player sees us, the reverse should be true
+	movb ent_x(r4), r1
+	movb ent_y(r4), r2
+	call @#map_get
+	bit #map_vis, r0
+	beq 0$ 
+	mov #ET_FIRE_CLOUD, r1
+	bit #is_fire_element, @r4
+	bne 2$
+	mov #ET_ACID_CLOUD, r1
+2$:	mov r1, @sp
+9$:	sec
+	br 8$
+0$:	ccc
+8$:	jmp @#retreg
+; select a random summon
+10$:	mov #summon_type_count, r1
+	call @#randx
+	movb summonables(r0), r0
+	mov r0, @sp
+	br 9$
+
+summonables:
+	.byte ET_RAT, ET_IMP, ET_FIRE_WORM, ET_BLUE_WORM, ET_BONE_CRIPPLE, ET_BONE_CREEPER
+	.byte ET_SCALY_WORM, ET_BONE_WARRIOR, ET_BONE_GOLEM, ET_KOBOLD
+.even
+summon_type_count = 10.
+

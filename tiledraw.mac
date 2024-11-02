@@ -1,0 +1,269 @@
+;
+; Tilemap renedering for Caves of Noraf
+;
+
+;
+; Known tile indices; range 040..0177 is assumed to be ASCII characters
+; 0200 is the empty tile and rendered via shortcut
+;
+; Decoding masks
+
+TC_TILE = 200
+TC_DECAL = 1 ; blood or something else; also allows for implicit 2x for tables
+TC_LIGHT = 2 ; this tile is lit and should be rendered bright
+TC_TYPEMASK = 174 ; 5 bits, 32 possible tiles
+TC_CODEMASK = TC_TYPEMASK + TC_LIGHT
+TC_FULLCODEMASK = TC_CODEMASK + TC_TILE ; includes the "tile" marker bit
+TC_INVTYPEMASK = 177777 - TC_TYPEMASK
+TC_INVCODEMASK = 177777 - TC_CODEMASK
+TC_INVFULLCODEMASK = 177777 - TC_FULLCODEMASK
+TC_OPENMASK = 140 ; If all bits zero, this is a true open space
+TC_LIQUIDMASK = 30
+TC_INVLIQUIDMASK = 177777 - TC_LIQUIDMASK
+TC_LIQUIDTESTMASK = 140
+
+;
+; Tile codes
+; 
+TC_EMPTY = 200
+TC_SHORE = 204
+TC_WATER = 210
+TC_WATER1 = 214
+TC_ACID = 220
+TC_ACID1 = 224
+TC_LAVA = 230
+TC_LAVA1 = 234
+TC_FLOORG = 240 ; overgrown temple floor
+TC_FLOOR = 244 ; temple floor
+TC_GRASS = 250
+TC_STAIRS = 254
+TC_BONES = 260
+TC_SKULL = 264
+TC_ROCK = 270
+TC_COLUMN = 274
+TC_WALL = 300
+; temple walls should go here ...
+
+TC_LAST_WALKABLE = TC_ROCK + 3
+
+;
+; Runs a single frame of map tile(s) animation
+;
+tiles_anim:
+	mov #tiledata + 80., r1
+	mov #4, -(sp)
+1$:	call @#tile_scroll_y
+	dec @sp
+	bne 1$
+	tst (sp)+
+	call @#tiles_warp
+	ret
+;
+; Redraw animated tiles
+;
+tiles_redraw_anim:
+	mov #10.*C_SCRWID+C_VADDR, r1 ; screen address to draw from
+	mov #map_side, -(sp)
+	tst -(sp)
+	mov #map_raw, -(sp)
+1$:	mov #map_side, 2(sp)
+3$:	mov @sp, r2
+	add #2, @sp
+	clr r0
+	mov @r2, r4
+	bit #map_seen, r4
+	beq 7$
+	bit #map_tag + TC_OPENMASK, r4 ; skip tagged & occluded locations
+	bne 7$
+	bit #TC_LIQUIDMASK, r4
+	beq 7$ ; sand
+	bit #map_vis, r4
+	bne 6$
+	add #2, r0 ; dark version
+6$:	bisb r4, r0
+2$:	call @#draw_tile
+7$:	add #2, r1
+	dec 2(sp)
+	bne 3$
+	add #<C_SCRWID*10.> - <map_side*2>, r1
+	dec 4(sp)
+	bne 1$
+	add #6, sp
+	ret
+;
+; r1 - tile address
+;
+; Returns
+;
+; r1 - next tile address
+; TODO this shouldn't be extern (?)
+tile_scroll_y:
+	mov r2, -(sp)
+	mov @r1, -(sp)
+	mov #11, r2
+1$:	mov 2(r1), (r1)+
+	sob r2, 1$
+	mov (sp)+, (r1)+
+	mov (sp)+, r2
+	ret
+;
+; Warps tiles by exchanging lines between versions
+;
+warp_addrs:
+	.word tiledata + <4 * 40.> ; acid -- bright
+	.word tiledata + <4 * 40.> + 20. ; acid -- dark
+	.word tiledata + <6 * 40.> ; lava -- bright
+	.word tiledata + <6 * 40.> + 20. ; lava -- dark
+	.word 0 ; terminator
+tiles_warp:
+	mov r1, -(sp)
+	mov r2, -(sp)
+	; get index of the next warp location
+	mov (pc)+, r1
+next_warp:
+	.word 0
+	dec r1
+	bpl 1$
+	mov #19., r1
+1$:	mov r1, @#next_warp
+	clr -(sp)
+	movb row_shuffle_big(r1), @sp
+	mov #warp_addrs, r2
+2$:	mov (r2)+, r1
+	beq  0$
+	add @sp, r1
+	; exchange lines
+	movb 40.(r1), r0
+	movb @r1, 40.(r1)
+	movb r0, @r1
+	br 2$
+	;
+0$:	tst (sp)+
+	mov (sp)+, r2
+	mov (sp)+, r1
+	ret
+;row_shuffle:
+	;.byte 0, 8., 4., 16., 12., 2., 14., 18., 6., 10. ; manually generated ordered shuffle
+row_shuffle_big:
+	.byte 9., 7., 16., 12., 10., 0., 17., 4., 1., 18., 2., 3., 19., 14., 11., 13., 5., 6., 15., 8. ; random (best for acid?)
+	;.byte 0., 4., 8., 12., 16., 3., 7., 11., 15., 19., 1., 5., 9., 13., 17., 2., 6., 10., 14., 18. ; ordered 2x2 (lava?)
+	;.byte 12., 4., 8., 16., 0., 11., 7., 3., 19., 15., 17., 1., 5., 9., 13., 14., 6., 2., 10., 18. ; both
+; FIXME liquids in shadowed areas should still be repainted no matter what! (animations)
+draw_map_tiles_hack:
+	mov #10.*C_SCRWID+C_VADDR, r1 ; screen address to draw from
+	mov #map_side, -(sp)
+	tst -(sp)
+	mov #map_raw, -(sp)
+1$:	mov #map_side, 2(sp)
+3$:	mov @sp, r2
+	add #2, @sp
+	clr r0
+	mov @r2, r4
+	bit #map_drawn + map_tag, r4 ; needs update? custom redrawing procedure?
+	bne 7$
+	bis #map_drawn, @r2
+	bit #map_vis, r4
+	bne 6$
+	bit #map_seen, r4
+	bne 5$
+	call @#draw_empty_tile
+	br 7$
+5$:	add #2, r0
+6$:	;tstb r4
+	;bmi 8$ ; already is a tile index (200+)
+	;mov #TC_COLUMN, r0 ; ASCII tiles are not supported now, so draw them as columns
+8$:	bisb r4, r0
+2$:	call @#draw_tile
+	bit #TC_DECAL, r4 ; TODO asr ?
+	beq 7$
+	call @#draw_decal
+7$:	add #2, r1
+	dec 2(sp)
+	bne 3$
+	add #<C_SCRWID*10.> - <map_side*2>, r1
+	dec 4(sp)
+	bne 1$
+	add #6, sp
+	ret
+.even
+
+;
+; Draws a tile; unchecked, but clips tile codes to 5 bits
+;
+; r0 -- tile index (destroyed)
+; r1 -- display address
+;
+; r5 -- scratchpad (destroyed)
+;
+; TODO tile pointer table
+draw_tile:
+	bic #TC_INVCODEMASK, r0
+	asl r0
+	mov r0, r5
+	asl r0
+	asl r0
+	add r5, r0
+	add #tiledata, r0
+	; unrolled output
+	mov	(R0)+, (R1)
+	mov	(R0)+, 01.*C_SCRWID(R1)
+	mov	(R0)+, 02.*C_SCRWID(R1)
+	mov	(R0)+, 03.*C_SCRWID(R1)
+	mov	(R0)+, 04.*C_SCRWID(R1)
+	mov	(R0)+, 05.*C_SCRWID(R1)
+	mov	(R0)+, 06.*C_SCRWID(R1)
+	mov	(R0)+, 07.*C_SCRWID(R1)
+	mov	(R0)+, 08.*C_SCRWID(R1)
+	mov	(R0)+, 09.*C_SCRWID(R1)
+	return
+
+;
+; Draws a tile; unchecked, but clips tile codes to 5 bits
+;
+; r1 -- display address
+;
+; r5 -- scratchpad (destroyed)
+;
+; TODO tile pointer table
+; TODO duplicate of empty char?
+draw_empty_tile:
+	clr 	R5
+	; unrolled output
+	mov	R5, (R1)
+	mov	R5, 01.*C_SCRWID(R1)
+	mov	R5, 02.*C_SCRWID(R1)
+	mov	R5, 03.*C_SCRWID(R1)
+	mov	R5, 04.*C_SCRWID(R1)
+	mov	R5, 05.*C_SCRWID(R1)
+	mov	R5, 06.*C_SCRWID(R1)
+	mov	R5, 07.*C_SCRWID(R1)
+	mov	R5, 08.*C_SCRWID(R1)
+	mov	R5, 09.*C_SCRWID(R1)
+	return
+
+;
+; Draws a (blood) decal
+;
+; r1 -- display address
+;
+; r5 -- scratchpad (destroyed)
+;
+; TODO tile pointer table
+draw_decal:
+	mov	#decal_blood, R5
+	; unrolled output
+	bis	(R5)+, (R1)
+	bis	(R5)+, 01.*C_SCRWID(R1)
+	bis	(R5)+, 02.*C_SCRWID(R1)
+	bis	(R5)+, 03.*C_SCRWID(R1)
+	bis	(R5)+, 04.*C_SCRWID(R1)
+	bis	(R5)+, 05.*C_SCRWID(R1)
+	bis	(R5)+, 06.*C_SCRWID(R1)
+	bis	(R5)+, 07.*C_SCRWID(R1)
+	bis	(R5)+, 08.*C_SCRWID(R1)
+	bis	(R5)+, 09.*C_SCRWID(R1)
+	ret
+
+; TODO proper handling of decals
+decal_blood:
+	.word 0, 0, 300, 30074, 300, 140000, 141460, 6300, 1700, 6000

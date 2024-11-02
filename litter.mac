@@ -1,0 +1,231 @@
+;
+; Litter -- the minor and unimportant objects scattered
+; over the map. Includes both static features (boulders, etc)
+; and named items. Decals are supported too.
+;
+
+min_litter = 3.
+max_litter = 15.
+max_grass_depth = 15.
+max_blood_spread = 4
+;
+; Generates a bit of litter to decorate the cave
+;
+
+gen_litter:
+	call @#gen_grass
+	; statics
+	mov #sc_litter, r4
+1$:	mov (r4)+, r5
+	beq 0$
+	call @#rand_bool
+	bcc 1$ ; 50% chance that this item will be not present on the level
+	; TODO item count
+	call @#map_find_free_tile
+	call @#map_ptr
+	mov r5, @r3
+	br 1$
+0$:	call @#gen_shores$
+	call @#gen_tile_variations$ ; just before last to avoid confusing the other algos
+	jmp @#gen_blood ; last, so grass and litter will be covered with blood
+
+;
+; Generates a single blood spot at given coordinates
+;
+; r1 -- x
+; r2 -- y
+;
+gen_bloodspot:
+	jsr r5, @#saveregs
+	mov #max_blood_spread, r1
+	call @#randx
+	inc r0
+	mov 2(sp), r1
+1$:	call @#map_ptr
+	mov @r3, r4
+	bic #TC_INVTYPEMASK, r4
+	beq 3$ ; empty tile
+	bit #TC_OPENMASK, r4 ; skip tiles covered with liquid; will skip shore tiles too
+	beq 2$ ; not empty, but open -> liquid
+	cmp #TC_STAIRS & TC_TYPEMASK, r4 ; do not drop blood on stairs (makes them barely visible)
+	beq 2$
+3$:	bis #TC_DECAL, @r3 ; mark with a decal (blood by default)
+2$:	mov 2(sp), r1
+	mov 4(sp), r2
+	call @#rand_walk8
+	sob r0, 1$
+	jmp @#retreg
+
+;
+; Generates several (3 to 10) blood spots to be placed around the level
+;
+
+gen_blood:
+	mov #7, r1
+	call @#randx
+	add #3, r0
+	mov r0, -(sp)
+1$:	call @#map_find_free_tile
+	call @#gen_bloodspot
+	dec @sp
+	bne 1$
+	tst (sp)+
+	ret
+;
+; Generates several (up to 15) grass spots on the map;
+; one less per depth level, so on high depths there will be none
+;
+; FIXME overgrown tile doesn't looke like it; should do something with the gfx
+;
+gen_grass:
+	mov #TC_GRASS + map_empty, r4
+	;mov #TC_FLOORG + map_empty, r4
+	mov #max_grass_depth, r1
+	mov @#map_depth, r2
+	dec r2
+	;beq 2$ ; first level check -- keep the overgrown texture
+	sub r2, r1
+	blos 0$
+	;mov #TC_GRASS + map_empty, r4
+2$:	call @#randx
+	inc r0
+	mov r0, -(sp)
+1$:	call @#map_find_free_tile
+	call @#map_ptr
+	mov r4, @r3
+	dec @sp
+	bne 1$
+	tst (sp)+
+0$:	ret
+
+;
+; Randomzies base tiles a bit; only liquids so far
+;
+gen_tile_variations$:
+	mov #map_raw, r1
+	mov #map_area, r2
+1$:	mov @r1, r0
+	bit #TC_LIQUIDTESTMASK, r0
+	bne 5$
+	bit #TC_LIQUIDMASK, r0
+	beq 5$ ; not a liquid
+	call @#rand_bool
+	bcc 5$
+	add #4, r0 ; change to alternative version
+5$:	mov r0, (r1)+
+	sob r2, 1$
+	ret
+;
+; Generate shores for acid levels
+;
+gen_shores$:
+	mov #map_raw, r1
+	mov #map_area, r2
+1$:	cmpb #TC_EMPTY, @r1
+	bne 5$
+	; scan adjacent tiles for at least 1 acid
+	mov #adj_offss, r3
+2$:	mov (r3)+, r0
+	beq 5$
+	add r1, r0
+	mov @r0, r0
+	bic #177777 - 370, r0 ; FIXME named mask for the tile group!
+	cmp #TC_ACID, r0
+	bne 2$
+8$:	movb #TC_SHORE, @r1
+5$:	tst (r1)+
+	sob r2, 1$
+	ret
+; TODO some sort of generic scanning code
+; offsets of 4 adjacent tiles
+adj_offss:
+	.word -2, 2, 0 - map_stride, map_stride, 0
+
+;
+; r0 -- map char (+color code)
+;
+; result, string pointers or zero:
+;
+; r0 -- prefix ("There is", "There are", "Here is", "here are", "A", "An", "The")
+; r1 -- proper name ("blood", "rock", "bones", ...)
+; r2 -- ending ("on the floor.", ".", ...)
+;
+; So combined phrase could be "There is ", "blood", "on the floor."
+; or "A ", "rock", "."
+; or "", "Water", "..."
+;
+get_litter_name:
+	bit #TC_DECAL, r0
+	beq 2$
+	mov #s_red_blood, r1
+1$:	mov #s_thereis, r0
+	mov #s_onthefloor, r2
+	ret
+2$:	bic #map_flags, r0
+	bit #TC_CODEMASK, r0
+	beq 3$ ; empty
+	bit #TC_LIQUIDTESTMASK, r0
+	bne 3$ ; not liquid
+	asr r0
+	asr r0
+	bic #177771, r0
+	mov st_liquids - 2(r0), r1
+	br 1$
+3$:	mov #sc_tiles - 2, r2
+4$:	mov (r2)+, r1
+	beq 0$
+	cmpb r0, r1
+	bne 4$
+	mov sc_name_offset(r2), r0
+	clr r1
+	clr r2
+	ret
+0$:	clr r0
+	ret
+
+st_liquids:
+	.word s_blue_water, s_green_acid, s_red_lava
+;
+; Decorated strings for litter
+;
+s_thereis:	.asciz "There is"
+s_a:		.asciz "A" ; we disallow litter names starting with a vowel
+s_some:		.asciz "Some"
+s_onthefloor:	.asciz "on the floor."
+s_ellipsis:	.asciz "..."
+s_red_blood:	.byte 3
+		.asciz "blood"
+s_blue_water:	.byte 1
+		.ascii "water"
+		.byte 2, 0
+s_green_acid:	.byte 3
+		.ascii "acid"
+		.byte 2, 0
+s_red_lava:	.byte 3
+		.asciz "lava"
+s_grass:	.asciz "Grass."
+s_stairs:	.asciz "Stairs down."
+s_bones:	.asciz "Bones."
+s_skull:	.asciz "Skull."
+s_rock:		.asciz "Rock."
+.even
+;
+; Litter table
+;
+sc_litter_name:	.word s_grass, s_stairs, s_bones, s_skull, s_rock
+sc_tiles:
+	.word TC_GRASS
+	.word TC_STAIRS
+sc_litter:
+	.word TC_BONES + map_empty
+	.word TC_SKULL + map_blue + map_empty
+	.word TC_ROCK + map_green + map_empty
+	.word 0
+sc_name_offset = sc_litter_name - sc_tiles - 2 ; 2 additional bytes to simplify code
+; (future) Format:
+; minlevel, maxlevel, mincount, maxcount, char, color (1..3), name ptr
+;
+; TODO name ptr is to be replaced by string ids of first and last name
+;
+; mincount can be negative to allow levels not containing this items
+;

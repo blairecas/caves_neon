@@ -1,0 +1,1413 @@
+;
+; Caves of Noraf
+;
+
+; zeroed buffers
+; allocated at the end of RAM
+;scratchpad_size = 4000 ; 2K bytes
+;scratchpad_size = 2000 ; 1K bytes
+scratchpad_size 	= 1400 ; 0.75K bytes FIXME this is a temporary hack for March 26 assembly!
+scratchpad 		= 40000 - scratchpad_size
+spad 			= scratchpad ; shorter synonym
+; tests show that typical allocation of floodbuf is about 150..250 bytes with ~500 at max
+floodbuf 		= scratchpad ; TODO move it to screen RAM for a map generation time?
+;floodbuf = 60000 ; testing in screen RAM
+map_raw 		= scratchpad + map_negsize
+ent_data 		= map_raw - <ent_size * ent_maxcount>
+sb_inv 			= ent_data - inv_textbytes ; inventory sidebar text
+
+; ramtop = sb_inv
+
+; dynamic data
+;ent_count:
+;	.word 0
+;
+; FIXME unused storage for the "empty" entity
+ent_empty 		= ent_data
+ent_player 		= ent_empty + ent_size
+ent_pool 		= ent_player + ent_size ; for dynamically allocated entities
+
+player_x 		= ent_player + ent_x
+player_y 		= ent_player + ent_y
+player_hp 		= ent_player + ent_hp_w
+
+str_buf 		= 600
+
+@include mapdefs.mac
+
+
+Start:	call	NeonInit
+;	mtps #340
+;	mov #1000, sp
+	mov	#trap_handler, @#34
+	clr	@#36
+;	mfps @#36
+;	mov #1330, @#177664
+;	; Init & switch to 32 chars/line; required for some resident progs
+;	; emt 14
+;	; mov #233, r0
+;	; emt 16
+;	call @#clscr$
+;	; set palette and RAM map, if 11/11M
+;	; supposed to be patched by loader!
+;	mov #040000, @(pc)+ ; @#177662
+;m11p:	.word 320 ; 115 ; ~177662
+;	mov (pc)+, @(pc)+
+;m11p2:	.word 320, 177716 ; 16200  RAM map (similar to ANDOS :) )
+;	; should be called right now, because it will be overwritten by clearing the RAM!
+998$:	call	draw_title
+;	mov #401, @#998$ ; patch out the call, because it will go to nowhere
+;	; initialize (clear) all remaining RAM
+;	; FIXME we've got the memset!!!!
+
+	mov	#badlands, R1
+999$:	clr	(R1)+
+	cmp	R1, #40000
+	blo	999$
+
+	mov	#s_presskey, R0
+	mov	#C_VADDR, R1
+	call	draw_pretty_string
+	; call	@#tiledraw_test
+	call	get_key
+
+	; RNG should be tandomized by now, init the stuff
+	call	inv_clear
+	call	player_init$
+	trap	$_update_sidebar ; to populate with player stats
+
+; FIXME gen_map should do the clearing
+9$:	mov	#map_raw, R1
+	mov	#map_area, R2
+1$:	mov	#TC_WALL, (R1)+
+	sob	R2, 1$
+	call	gen_map
+	call	map_find_free_tile
+	movb	R1, player_x
+	movb	R2, player_y
+	mov	#177776, @#776$ ; give player a 1 turn of handicap
+	; new map was generated, refresh the screen (or not?)
+	call	clscr$
+
+; === Main game loop ===
+4$:	call	update_timers
+	movb	player_x, r1
+	movb	player_y, r2
+	call	trace_vis
+	call	tag_entities
+;	call	tiles_anim
+	;call	draw_map
+	call	draw_map_tiles_hack
+	call	draw_entities$
+6$:	call	draw_sidebar
+7$:	asr	(PC)+
+776$:	.word	177776 ; monster move skip counter via shift register
+	bcc	5$
+	; here we go if there was a turn spent and we should give monsters a move
+	call	mons_turn
+	bcc	5$
+	; redraw :(
+	call	tag_entities
+;	call	tiles_anim
+	; call	@#draw_map
+	call	draw_map_tiles_hack
+	call	draw_entities$
+	; FIXME only if player stats were changed!
+	call	draw_sidebar
+5$:	call	draw_prompt ; here we jump in case when no time was spent
+	; Blaire: do not clear if killed
+	bit	#is_dead, ent_player
+	bne	2$
+	clr	prompt
+	clr	prompt_a
+	clr	prompt_b
+2$:	call	get_key_anim
+	; exit game
+	cmpb	#C_KEY_ESC, R0
+	bne	1001$
+	jmp	NeonExit
+1001$:	; Cheats
+	cmpb	#'S, R0
+	beq	50$ ; toggle scroll animation
+;	cmpb #14, r0 ; forced descent cheat
+;	beq 23$
+;	cmpb #3, r0 ; map visibility cheat
+;	beq 21$
+	bit	#is_dead, ent_player
+	bne	80$
+	; World interaction
+	cmpb	#C_KEY_ENTER, R0
+	beq	20$
+
+	; Movement
+	; TODO jump table for fixed key operations
+	clr	R1
+3$:	cmpb	movekeys(R1), R0
+	beq	10$ ; domove
+	inc	R1
+	cmp	#4, R1
+	bne	3$
+
+	; space - wait
+	cmpb	#C_KEY_SPACE, R0
+	beq	70$ ; wait
+
+	; At last, Inventory
+	; TODO better handling of [Shift]?
+	mov	R0, R1
+	bis	#20, R0
+	sub	#'0, R0
+	blos	2$ ; zero is not an inventory index (TODO fists -- check separately)
+	cmp	#inv_slots, R0
+	blo	2$
+	mov	#inv_drop, -(SP)
+	bit	#20, r1
+	beq	8$
+	mov	#inv_use, @SP
+8$:	call	@(SP)+
+	bcc 	5$ ; nothing happened
+	; -- inv use sound
+	mov	#SndUse, SoundCur
+	br 	101$ ; something happened as the result, redraw status
+
+; descend, if there are stairs
+20$:	movb	player_x, R1
+	movb	player_y, R2
+	call	map_get
+	bic	#3, r0
+	cmpb	#TC_STAIRS, r0
+	bne	30$
+23$:	mov	#s_descend, prompt
+	inc	map_depth
+	call	ent_purge
+	trap	$_update_sidebar
+	; -- take sound
+	mov	#SndTake, SoundCur
+	jmp	9$
+
+; pick up item, if there is any
+30$:	call	ent_find_ignoreplayer0
+	tst	R0
+	beq	39$	
+	bit	#is_monster, @R0
+	bne	39$ ; cannot pick up monsters and their remains
+	; -- take sound
+	mov	#SndTake, SoundCur
+	bit	#is_egg, @R0
+	bne	37$
+	call	inv_add
+	bcc	38$
+	mov	#s_taken, prompt
+101$:	call	ent_get_full_name12 ; combined exit for inventory manipulations
+	mov	R1, prompt_a
+	mov	R2, prompt_b
+	jmp	4$ ; taking/dropping/using can have global effects, so force a redraw
+37$:	jmp	65$
+38$:	mov	#s_cantpickup, prompt
+	br	5$
+
+; nothing to pick up
+39$:	mov	#s_nouse, prompt
+	br	5$
+
+; map visibility cheat
+21$:	mov	#map_raw, R1
+	mov	#map_area, R2
+22$:	bic	#map_drawn, @R1
+	bis	#map_seen, (R1)+
+	sob	R2, 22$
+	jmp	4$
+
+; scroll animation toggle
+50$:	com	do_wait_anim
+	jmp	5$
+
+; waiting
+70$:	mov	#s_youwait, prompt
+	jmp	7$
+
+; laying dead
+80$:	; last message better be 'someone killed you' (more information than 'you are dead')
+	; mov	#s_youaredead, prompt
+	jmp	5$
+
+; hit the wall or other obstacle
+13$:	; -- bump sound
+	mov	#SndBump, SoundCur
+	mov	#s_bump, prompt
+	jmp	5$
+
+; movement
+10$:	mov r1, r0
+	asr r1
+	bcs 16$
+	mov r0, -(sp)
+	clr r0
+	asr r1
+	adc r0
+	call @#set_player_left$
+	mov (sp)+, r0
+16$:	movb @#player_x, r1
+	movb @#player_y, r2
+	mov #ent_player, r4 ; trymoveto will _attempt_ to flip the player to needed direction
+	call @#mons_trymoveto
+	tst r0
+	bmi 13$ ; hit the wall
+	bne 60$
+	; can move
+	; -- tick sound
+	mov	#SndTick, SoundCur
+	movb r1, @#player_x
+	movb r2, @#player_y
+	mov r0, r4
+	; is there something on the floor?
+	call @#ent_find_ignoreplayer0
+	tst r0
+	beq 15$ ; nothing
+	; found something , now print its name
+	call @#ent_get_full_name12
+	mov r1, @#prompt_a
+	mov r2, @#prompt_b
+	mov #s_onfloor, @#prompt
+	br 14$
+	; check floor for named statics
+15$:	call @#map_get
+	call @#get_litter_name
+	mov r0, @#prompt
+	beq 14$ ; nothing to print ...
+	mov r1, @#prompt_a
+	mov r2, @#prompt_b
+	; purge visibility flags
+14$:	mov #map_vis, r0
+	mov #map_vis + map_drawn, r3
+	mov #map_raw + map_size, r1
+	mov #map_area, r2
+11$:	bit r0, -(r1)
+	beq 12$
+	bic r3, @r1
+12$:	sob r2, 11$
+	jmp @#4$
+; (possible) player combat
+60$:	mov #s_youattack, @#prompt
+	call @#ent_get_full_name12
+	mov r1, @#prompt_a
+	mov r2, @#prompt_b
+	; calculate the attack
+	mov r0, r2
+	mov #ent_player, r3 ; mark yourself as attacker
+	mov r3, r4
+	call @#mons_calc_damroll
+	; do the damage roll
+	mov r2, r4
+	call @#mons_damage
+	tst r0
+	bne 61$ ; still alive
+	mov #s_youkill, @#prompt
+	; TODO no need to recalc vis?
+61$:	jmp @#4$ ; in case of combat, force the full repaint
+; eggs
+65$:	call @#egg_crush
+	jmp @#4$
+
+;
+;
+;
+get_key:
+	trap	$_crand
+	tstb	C_KBDCSR
+	bpl	get_key
+get_key_r:
+	mov	C_KBDBUF, R0
+	tstb	C_KBDCSR
+	bmi	get_key_r
+	return
+	
+;
+; TODO time animation!
+;
+get_key_anim:
+	tst	(PC)+
+do_wait_anim:	
+	.word	-1
+	bpl	get_key
+10$:	trap	$_crand
+	;
+	cmp	AniCnt, #10.
+	blo	20$
+	clr	AniCnt
+	call	tiles_anim
+	call	tiles_redraw_anim
+	; TODO redraw all entities on animated surfaces and animated ents
+	call	draw_player$
+20$:	;
+	tstb	C_KBDCSR
+	bpl	10$
+	br	get_key_r
+
+
+movekeys:
+	; .byte 31, 33, 10, 32 ; matches dirs
+	.byte	C_KEY_RIGHT, C_KEY_DOWN, C_KEY_LEFT, C_KEY_UP
+	
+; call with jsr r5, saveregs
+saveregs:
+	mov r4, -(sp)
+	mov r3, -(sp)
+	mov r2, -(sp)
+	mov r1, -(sp)
+	mov r0, -(sp)
+	mov r5, -(sp)
+	mov 14(sp), r5
+	ret
+
+;
+; Called at the beginning of every game turn to notify
+; various systems about tie being passed
+;
+;
+update_timers:
+	jmp @#inv_decay
+	;ret
+;
+; Draw a warning about being attacked. Should override basic messages
+; like "There is XXX on the floor"
+;
+; r0 -- the attacking entity
+;
+; TODO pause, if there is another message to be read
+notify_attacked:
+	jsr r5, @#saveregs
+	mov r0, r4
+	mov #s_attacksyou, @#prompt_b
+notify_shared:
+	call @#ent_get_full_name12
+	mov r1, @#prompt
+	mov r2, @#prompt_a
+	trap $_update_sidebar ; FIXME jmp after converting to trap
+	jmp @#retreg
+;
+; Draw a message about being killed. Should override basic messages
+; like "There is XXX on the floor"
+;
+; r0 -- the attacking entity
+;
+; TODO pause, if there is another message to be read
+notify_killed:
+	jsr r5, @#saveregs
+	mov r0, r4
+	mov #s_killedyou, @#prompt_b
+	br notify_shared
+
+;
+; tag all visible map locations which contain entities, including player
+;
+tag_entities:
+	call @#map_clear_tags
+	mov #ent_player, r4
+	mov #ent_poolsize + 1, r5
+1$:	tst @r4
+	beq 9$
+	bmi 9$
+	movb ent_x(r4), r1
+	movb ent_y(r4), r2
+	call @#map_ptr
+	bit #map_vis, @r3
+	beq 9$
+	bis #map_tag, @r3
+9$:	add #ent_size, r4
+	sob r5, 1$
+	ret
+
+draw_entities$:
+	mov #ent_pool, r4
+	mov #ent_poolsize, r5
+1$:	tst @r4
+	beq 9$
+	bmi 9$
+	movb ent_x(r4), r1
+	movb ent_y(r4), r2
+	call @#map_ptr
+	bit #map_vis, @r3
+	beq 9$
+	bic #map_drawn, @r3
+	mov ent_sprite(r4), r0
+	tstb r0
+	bmi 8$
+	inc r2
+	call @#drawchar_at
+	br 9$
+8$:	call @#draw_sprite
+9$:	add #ent_size, r4
+	sob r5, 1$
+	call @#draw_player$
+	ret
+
+draw_prompt:
+	mov	#str_buf, R2
+	mov	prompt, r1
+	beq	1$
+	call	str_append
+	movb	#40, (r2)+
+	mov	prompt_a, r1
+	beq	1$
+	call	str_append
+	movb	#40, (r2)+
+	mov	prompt_b, r1
+	beq	1$
+	call	str_append
+1$:	movb	#40, (r2)+
+	cmp	#str_buf+32., r2
+	bhi	1$
+	mov	#C_VADDR, R1
+	mov	#str_buf, R0
+	clrb	40(R0)
+	jmp	draw_pretty_string
+
+;
+; Map setup related data
+;
+
+tile_default_liquid: ; default liquid for the current depth
+	.word TC_WATER ! map_empty
+; the "heart" tile, typically the ladder down, but can be any task target
+; supposed to be always reachable
+map_heart_x:
+	.word map_side / 2
+map_heart_y:
+	.word map_side / 2
+	
+gen_ray:
+	jsr r5, saveregs
+	sub r1, r3
+	sub r2, r4
+	swab r1
+	swab r2
+	asl r3
+	asl r3
+	asl r4
+	asl r4
+	add #200, r1
+	add #200, r2
+	mov #100, r5
+1$:	call @#map_set_shifted
+	add r3, r1
+	call @#map_set_shifted ; so tunnels will always be connected
+	add r4, r2
+	sob r5, 1$
+	jmp @#retreg
+
+gen_wiggle:
+	jsr r5, @#saveregs ; r0 -- @sp
+	sub r1, r3
+	sub r2, r4
+1$:	mov @sp, r0
+	call @#map_set
+	call @#rand_bool ; select a direction
+	bcs 2$
+	tst r3 ; dx
+	beq 3$ ; already there
+	bmi 4$
+	inc r1
+	dec r3
+	br 3$
+4$:	dec r1
+	inc r3
+	br 3$
+2$:	tst r4 ; dy
+	beq 3$
+	bmi 5$
+	inc r2
+	dec r4
+	br 3$
+5$:	dec r2
+	inc r4
+3$:	mov r3, r0
+	bis r4, r0
+	bne 1$
+	mov @sp, r0
+	call @#map_set ; safety
+	jmp @#retreg
+gen_map:
+	call @#map_clear_tags
+	; start generation
+	mov #4, -(sp) ; riverChanceBias
+	mov @#map_depth, r4
+	mov r4, r0
+	asr r0
+	asr r0
+	asr r0
+	asr r0
+	sub r0, @sp
+	cmp #1, r4
+	beq 0$
+	cmp #99., r4
+	beq 99$
+	mov #TC_EMPTY + map_empty, r0
+	mov #10., r1 ; effort
+	call @#rand_bool
+	bcs 1$
+	mov #30., r2 ; max cave radius (real will be about one half)
+	call @#createCaveNodiagonals
+	br 2$
+1$:	mov r1, r5
+	call @#createTunnels
+	add #6, @sp ; riverChanceBias
+2$:	mov #TC_WATER + map_empty, r0
+	mov @#map_depth, r4 ; TODO register is saved?
+	cmp #42., r4
+	bhi 3$
+	mov #TC_ACID + map_empty, r0
+	cmp #73., r4
+	bhi 3$
+	bis #map_green, r0
+	mov #TC_LAVA + map_empty, r0
+3$:	mov r0, @#tile_default_liquid
+	mov @sp, r5 ; riverChanceBias
+	mov r0, @sp
+	trap $_crand
+	bic #177770, r0
+	add r0, r5
+	bmi 9$ ; negative or zero
+	beq 9$
+	mov (sp)+, r0
+	call @#rand_bool
+	bcs 8$
+	call @#createTunnels
+	br 10$
+8$:	call @#createCaveNodiagonals
+	br 10$
+; start level
+0$:	call @#createBaseStartRoom
+9$:	tst (sp)+
+; shared exit code
+; FIXME level 99 should be connected too!
+; FIXME level 99 is a big hack! Generalize!
+10$:	cmp @#map_depth, #99.
+	beq 18$
+	; generate exit and fix the map
+	call @#map_find_free_tile
+	mov r1, @#map_heart_x
+	mov r2, @#map_heart_y
+	; seal all map locations not connected to downstairs
+	; .. but try to reconnect the map first
+	mov #3, -(sp) ; max. reconnection attempts
+19$:	call @#map_calcflood
+	mov #map_raw, r1
+	mov #map_area, r2
+	mov #map_tag, r3
+12$:	mov (r1)+, r0
+	bpl 14$ ; solid
+	bit r3, r0
+	bne 13$ ; tagged
+	dec @sp ; still can try to reconnect the lost areas?
+	bpl 80$ ; yes!
+	; sealed passages will bw filled with RED stone ("blood veins")
+	mov #TC_WALL + TC_DECAL, -2(r1)
+14$:	sob r2, 12$
+11$:	tst (sp)+
+	mov @#map_heart_x, r1
+	mov @#map_heart_y, r2
+	mov #TC_STAIRS + map_empty, r0
+	call @#map_set
+br 17$
+18$:	; we skip here on the last level (no exit, but final boss)
+	mov #ET_FINALBOSS, r3
+	mov #1, r4 ; There can be only one!
+	call @#ent_force_dropitems$
+	; the most generic code for items and such follows
+17$:	call @#gen_litter
+	mov #7, r0
+	sub @#map_depth, r0
+	jmp @#ent_drop_level_items$
+	;ret
+13$:	bic r3, -2(r1) ; clear tag
+	sob r2, 12$
+	br 11$
+; final level
+99$:	call @#createBaseStartRoom
+	mov #TC_LAVA + map_empty, r0
+	mov #10., @sp
+	br 3$
+80$:	; map reconnection logic ...
+	; calculate (x, y) from the counter
+	sub #map_raw, r1
+	asr r1
+	; divide by subtraction
+	clr r2
+81$:	sub #map_side, r1
+	bmi 82$
+	inc r2
+	br 81$
+82$:	add #map_side, r1
+	mov @#tile_default_liquid, r0
+	mov @#map_heart_x, r3
+	mov @#map_heart_y, r4
+	call @#gen_wiggle
+	call @#map_clear_tags
+	br 19$
+	
+dirs:	.word 1,0, 1,1 , 0,1 , -1,1, -1,0, -1,-1, 0,-1, 1,-1, 0, 0
+; 
+; r0 -- char
+; r1 -- effort
+; r2 -- max distance
+; TODO noDiagonals
+; TODO two cells wide guard band (one causes problems sometimes)
+createCaveNodiagonals:
+	mov #177771, @#ccnodp
+	call createCave
+	mov #177770, @#ccnodp
+	ret
+createCave:
+	jsr r5, @#saveregs
+1$:	mov 4(sp), r1
+	; calculate trace length
+	; TODO use the verified formulae
+	asr r1
+	mov r1, r5
+	adc r5
+	inc r1
+	call @#randx
+	add r0, r5
+	mov #map_side / 2, r1
+	mov r1, r2
+2$:	trap $_crand
+	bic (pc)+, r0
+ccnodp = .	
+	.word 177770 ; direction disabling patch
+	asl r0
+	asl r0
+	add #dirs, r0
+	add (r0)+, r1
+	add (r0)+, r2
+	call @#map_clamp
+	mov @sp, r0
+	call @#map_set
+	sob r5, 2$
+	dec 2(sp)
+	bpl 1$
+	jmp @#retreg
+
+;r5--count, r0 -- char
+createTunnels:
+1$:	call @#rand_point
+	mov r1, r3
+	mov r2, r4
+	call @#rand_point
+	call @#rand_bool
+	bcs 2$
+	call @#gen_ray
+	br 3$
+2$:	call @#gen_wiggle
+3$:	sob r5, 1$
+	ret
+	
+createBaseStartRoom:
+	mov #5, r1
+	mov r1, r2
+	mov #20., r3
+	mov r3, r4
+createColonnadeRoom:
+	mov #TC_FLOOR + map_empty, r0
+	call @#map_fillbox
+	mov #TC_COLUMN + map_green, r0
+	mov #2, r5 ; distance between columns
+	add r5, r1
+	add r5, r2
+	dec r3
+	dec r4
+	mov r1, -(sp)
+1$:	call @#map_set
+	add r5, r1
+	cmp r1, r3
+	blo 1$
+	mov @sp, r1
+	add r5, r2
+	cmp r2, r4
+	blo 1$
+	tst (sp)+
+	ret
+;
+; flood fills the map; scratchpad area is used as the flood buffer
+; so don't forget to clear it after!
+; r1, r2 -- start position
+; r3, r4, r5 - destroyed (FIXME)
+; TODO: distance?
+; TODO speed! don't recalc coords each time!
+; FIXME not enough space on stack to fill some maps!
+;
+map_walk4:
+	;.word 0, -1, 0, 2, -1, -1, 2, 0 ; xy scan
+	.word 0, -1, -1, 1, 1, 1, 1, -1 ; rhombic scan
+map_calcflood:
+	mov #floodbuf, r4
+	clr (r4)+
+	br 2$
+1$:	mov -(r4), r1
+	beq 0$
+	mov -(r4), r2
+	; tag it
+2$:	call @#map_ptr
+	bis #map_tag, @r3
+	; walk all 4 directions
+	mov #map_walk4, r5
+4$:	add (r5)+, r1
+	add (r5)+, r2
+	call @#map_checked_ptr
+	bmi 3$
+	bit #map_tag, @r3
+	bne 3$ ; already tagged
+	mov @r3, r0
+	cmpb #TC_LAST_WALKABLE, r0
+	bcs 3$
+	;cmp #400, sp
+	;bhis 1$
+	mov r2, (r4)+
+	mov r1, (r4)+
+3$:	cmp #map_walk4 + 20, r5
+	bhi 4$
+	br 1$
+0$:	;call @#clear_scratchpad
+	ret
+; finds non-liquid random tile on the map
+;
+; Result:
+; r1 -- x
+; r2 -- y
+; r3 -- pointer
+;
+map_find_free_tile:
+	mov r0, -(sp)
+	mov r5, -(sp)
+	mov #100., r5
+1$:	call @#rand_point
+	call @#map_get_bare
+	bpl 5$ ; empty flag is not set
+	call @#is_tile_free
+	bcc 2$
+5$:	sob r5, 1$
+	; random trials did not help; use linear scan instead; columns, right to left, bottom to top
+	mov #map_side - 2, r1
+3$:	mov #map_side - 2, r2
+4$:	call @#map_get_bare
+	bpl 6$ ; empty flag is not set
+	call @#is_tile_free
+	bcc 2$
+6$:	sob r2, 4$
+	sob r1, 3$
+	; as the last resort return the map center; hopefully algo will clear it (?)
+	mov #map_side / 2, r1
+	mov r1, r2
+	call @#map_ptr
+2$:	mov (sp)+, r5
+	mov (sp)+, r0
+	ret
+
+; r1, r2, r3, r4
+; r0 - char
+; clobbers all but r0
+map_fillbox:
+	jsr r5, @#saveregs
+	sub r1, r3 ; width
+	sub r2, r4 ; height
+	mov r3, -(sp)
+	mov r3, r5
+1$:	call map_checked_ptr
+	mov r0, @r3
+	inc r1
+	sob r5, 1$
+	mov @sp, r5
+	sub r5, r1
+	inc r2
+	sob r4, 1$
+	tst (sp)+
+retreg:
+	mov (sp)+, r0
+	mov (sp)+, r1
+	mov (sp)+, r2
+	mov (sp)+, r3
+	mov (sp)+, r4
+	mov (sp)+, r5
+	ret
+map_set_shifted:
+	mov r1, -(sp)
+	mov r2, -(sp)
+	clrb r1
+	swab r1
+	clrb r2
+	swab r2
+	call @#map_set
+	mov (sp)+, r2
+	mov (sp)+, r1
+	ret
+
+map_get_shifted:
+	mov r1, -(sp)
+	mov r2, -(sp)
+	clrb r1
+	swab r1
+	clrb r2
+	swab r2
+	call @#map_get
+	mov (sp)+, r2
+	mov (sp)+, r1
+	ret
+
+; r0 = bit mask to set
+; (shifted) r1 = x , r2 = y
+; unchecked
+; returns r0 = new data
+map_mutate:
+	mov r1, -(sp)
+	mov r2, -(sp)
+	mov r3, -(sp)
+	clrb r1
+	swab r1
+	clrb r2
+	swab r2
+	call @#map_ptr
+	bis @r3, r0
+	mov r0, @r3
+	mov (sp)+, r3
+	mov (sp)+, r2
+	mov (sp)+, r1
+	ret
+
+; r0 = data, r1 = x, r2 = y
+map_set:
+	mov r3, -(sp)
+	call @#map_checked_ptr
+	mov r0, @r3
+	mov (sp)+, r3
+	ret
+
+; r0 = data, r1 = x, r2 = y
+; Z, N = flags(r0)
+map_get:
+	mov r3, -(sp)
+	call @#map_checked_ptr
+	mov @r3, r0
+	mov (sp)+, r3
+	tst r0
+	ret
+
+; same as map_get, but returns tile pointer in r3
+map_get_bare:
+	call @#map_checked_ptr
+	mov @r3, r0
+	ret
+
+; r1 = x, r2 = y, ptr = r3
+map_checked_ptr:
+	tst r1
+	bmi map_madptr
+	tst r2
+	bmi map_madptr
+	cmp r1, #map_side
+	bhis map_madptr
+	cmp r2, #map_side
+	bhis map_madptr
+map_ptr:
+	mov r2, r3
+	; x24; 24 = 8 + 16
+	asl r3
+	add r2, r3
+	asl r3
+	asl r3
+	asl r3
+	add r1, r3
+	asl r3 ; words
+	add #map_raw, r3
+	ret
+map_madptr:
+	mov #37776, r3
+	sen
+	ret
+; clamps r1 & r2 to be within a visitable part of map
+;
+map_clamp:
+	cmp #23., r1
+	bhi 1$
+	mov #22., r1
+	br 2$
+1$:	cmp #1, r1
+	blos 2$
+	mov #1, r1
+2$:	cmp #23., r2
+	bhi 3$
+	mov #22., r2
+	br 4$
+3$:	cmp #1, r2
+	blo 4$
+	mov #1, r2
+4$:	ret
+
+; Drops the entity r0 at (r1, r2), or nearby of occluded
+; TODO random shuffle of directions!
+map_dropnear:
+	jsr r5, @#saveregs
+	beq 0$
+	mov r0, r5
+	bic #is_hidden, @r5
+	mov #9., r4 ; possible directions
+	mov #dirs, r3
+	mov r2, -(sp)
+	mov r1, -(sp)
+1$:	call @#map_get
+	cmpb #TC_LAST_WALKABLE, r0
+	bcs 2$
+	call @#ent_find_ignoreplayer0 ; it is legal to throw stuff at player's feet
+	tst r0
+	beq 9$ ; found!
+2$:	mov @sp, r1
+	mov 2(sp), r2
+	add (r3)+, r1
+	add (r3)+, r2
+	sob r4, 1$
+	; FIXME use some better logic in case of full 9-dir occlusion; at least avoid stacking
+	call @#map_find_free_tile ; last chance, drop ANYWHERE
+9$:	movb r1, ent_x(r5)
+	movb r2, ent_y(r5)
+	cmp (sp)+, (sp)+
+0$:	jmp @#retreg
+
+; FIXME and use
+clear_vis:
+	mov #map_raw, r1
+	mov #map_area, r2
+1$:	bic #map_vis + map_drawn, (r1)
+	bis #map_seen + map_blue, (r1)+
+	sob r2, 1$
+	ret
+; radius vectors for a quarter-circle
+; TODO store gid-sized vectors instead (always full tile steps),
+; but reduce the step count; this should reduce a count of tiles visited
+; by about 25%
+circ_radii:
+	.byte 0377 , 0
+	.byte 0377 , 037
+	.byte 0337 , 077
+	.byte 0337 , 0137
+	.byte 0277 , 0177
+	.byte 0277 , 0237
+	.byte 0257 , 0257
+	.byte 0237 , 0277
+	.byte 0177 , 0277
+	.byte 0137 , 0337
+	.byte 077 , 0337
+	.byte 037 , 0377
+	.byte 0 ; end of list
+.even
+; base vectors for quadrants
+q_basevecs:
+	.word 2, 48.	; dx+, dy+
+	.word 48., -2	; dy+, dx-
+	.word -2, -48.	; dx-, dy-
+	.word -48., 2	; dy-, dx+
+	.word 0 ; end of list
+
+; Update visibily map for the given observer position
+; faster version with hardcoded map geometry and vis update
+; designed especially for player
+; (r3:r4), r5 = max
+; r1 - observer x
+; r2 - observer y
+trace_vis:
+	jsr	R5, @#saveregs
+	call	map_ptr
+	mov	R3, @#vis_mapaddr
+	mov	#q_basevecs, -(SP)
+1$:	; FIXME this quck-repaint trick des not works as intended (too many visual glitches, slow)
+	; maybe join at least with the partial tile animation trick?
+	; com #0
+	; bne 3$
+	; call @#tiles_anim ; damages regs!
+3$:	mov	(SP)+, R1
+	mov	(R1)+, vtrtace_patch_s
+	beq	0$
+	mov	(R1)+, vtrtace_patch_t
+	mov	R1, -(SP)
+	mov	#circ_radii, -(SP)
+2$:	mov	(SP)+, R0
+	movb	(R0)+, R3
+	beq	1$
+	movb	(R0)+, R4
+	swab	R3
+	swab	R4
+	mov	R0, -(SP)
+	mov	player_lightradius, 78$ ; max. distance to trace (light radius, small lantern - 5)
+	; cast the ray
+	mov	(PC)+, R5
+55$:	.word	000000 ; starting point for trace (address)
+	; r1 and r2 are free to be used as accumulators
+	; initially, start at the middle of cell
+	mov	#100000, R1
+	mov	R1, R2
+	;
+8$:	bic	#map_drawn, @R5 ; take no chances; slowdown is minor, but code is simpler
+	bis	#map_vis + map_seen, @R5
+	; map_empty flag is a signum bit
+	bpl	2$
+	; dx
+	add	R3, R1
+	bcc	73$
+	add	(PC)+, R5
+71$:	.word	02. ; map column stride
+	; dy
+73$:	add	R4, R2
+	bcc	74$
+	add	(PC)+, R5
+72$:	.word	48. ; map row stride
+74$:	dec	(PC)+
+78$:	.word	1
+	bpl	8$
+	br	2$
+0$:	jmp @#retreg
+
+vis_mapaddr	= 55$
+vtrtace_patch_s	= 71$
+vtrtace_patch_t	= 72$
+
+; returns result in the carry flag
+rand_bool:
+	mov r0, -(sp)
+	trap $_crand
+	asl r0
+	aslb r0
+	mov (sp)+, r0
+	ret
+
+rand_point:
+	mov r0, -(sp)
+1$:	trap $_crand
+	bic #-32., r0
+	cmp r0, #22.
+	bhis 1$
+	mov r0, r1
+	inc r1
+2$:	trap $_crand
+	bic #-32., r0
+	cmp r0, #22.
+	bhis 2$
+	mov r0, r2
+	inc r2
+	mov (sp)+, r0
+	ret
+;
+; alters r1, r2 to move in random direction; all octants are possible
+; there is no clipping
+;
+rand_walk8:
+	mov r0, -(sp)
+	trap $_crand
+	bic #177743, r0
+	br rand_walk_shared
+;
+; alters r1, r2 to move in random direction; only 4 cardinals are possible
+; there is no clipping
+;
+rand_walk:
+	mov r0, -(sp)
+	trap $_crand
+	bic #177747, r0
+rand_walk_shared:
+	add #dirs, r0
+	add (r0)+, r1
+	add (r0)+, r2
+	mov (sp)+, r0
+	ret
+; r1 -- range, [0..r1)
+randx:	tst r1
+	beq 0$
+	mov r2, -(sp)
+	mov r1, r2
+	; check for power of two
+	dec r2
+	beq 1$ ; range is [0..1), the only possible result is 0
+	bit r1, r2
+	beq 2$
+	; no need to inc back -- high bit did not change
+	; 1
+	asr r2
+	bis r1, r2
+	; 2
+	asr r2
+	bis r1, r2
+	; 3
+	asr r2
+	bis r1, r2
+	; 4
+	asr r2
+	; TODO early exit for ranges 2..7, the most used ones?
+	bis r1, r2
+	; 5
+	asr r2
+	bis r1, r2
+	; 6
+	asr r2
+	bis r1, r2
+	; 7
+	asr r2
+	bis r1, r2
+2$:	com r2
+3$:	trap $_crand
+	bic r2, r0
+	cmp r1, r0
+	blos 3$
+	mov (sp)+, r2
+	ret
+1$:	mov (sp)+, r2
+0$:	clr r0
+	ret
+
+; Generates a next 8-bit pseudorandom number
+; generator period is 0xfffe0000 (4294836224)
+; Inputs:
+;       None
+; Outputs:
+;       r0 - next pseudorandom number
+;
+; Clobbers:
+;       r1
+;
+crand$:
+	mov (pc)+, r1
+crand_a:
+	.word 0
+	mov (pc)+, r0
+crand_b:
+	.word 0
+	add #53731., r1
+	add r1, r0
+	mov r0, @#crand_b
+	clrb r0
+	swab r0
+	add r0, r1
+	mov r1, @#crand_a
+	ret
+
+; Blaire: missing random, used in monsters.mac
+crand:	mov	R1, -(SP)
+	call	crand$
+	mov	(SP)+, R1
+	return
+
+
+; returns result in C flag, clear means empty
+is_tile_walkable:
+	cmpb #TC_LAST_WALKABLE, r0
+	ret
+
+; TODO there are only 4 "free" tiles -- surely code could be simpler?
+is_tile_free:
+	mov r1, -(sp)
+	mov #ttypes_free, r1
+	mov r2, -(sp)
+	mov r0, -(sp)
+	bic #TC_INVFULLCODEMASK, r0
+1$:	movb (r1)+, r2
+	sec
+	beq 2$
+	cmpb r0, r2
+	bne 1$
+	clc
+2$:	mov (sp)+, r0
+	mov (sp)+, r2
+	mov (sp)+, r1
+	ret
+;
+; Tools
+;
+
+; clears the map tag flags
+; TODO map_vis and other options
+map_clear_tags:
+	jsr r5, @#saveregs
+	mov #map_tag, r0
+	mov #map_raw, r1
+	mov #map_area, r2
+1$:	bic r0, (r1)+
+	sob r2, 1$
+	jmp @#retreg
+
+;
+; Clears the scratchpad buffer
+; FIXME use the unified memset rountine!
+;
+clear_scratchpad:
+clear_spad:
+	jsr r5, @#saveregs
+	clr r0
+	mov #scratchpad, r1
+	mov #scratchpad_size / 2, r2
+1$:	mov r0, (r1)+
+	sob r2, 1$
+	jmp @#retreg
+
+;
+; UI drawing
+;
+
+; TODO calculating addresses could save a few bytes?
+sidebar_text:
+	; Cave depth
+	.byte 2 ; green
+	.ascii "Depth "
+	.byte 3 ; red
+sb_depth:
+	.byte 40, 40, 0
+	; HP
+	.byte 3 ; red
+	.ascii "HP "
+	.byte 2 ; green
+sb_hp:
+	.ascii "08/10"
+	.byte 0
+	; MP
+	.byte 3 ; red
+	.ascii "MP "
+	.byte 2 ; green
+sb_mp:
+	.ascii "00/00"
+	.byte 0
+	; Armor
+	.byte 3 ; red
+	.ascii "Armor "
+	.byte 2 ; red
+sb_armor:
+	.ascii "00"
+	.byte 0
+	; Gems:
+	.byte 1
+	.ascii "Gems  "
+	.byte 2
+sb_gems:
+	.ascii "00"
+	; end of list
+	.byte 0
+
+	.byte 0
+.even
+; sidebar player data update script
+; TODO colorize based on stat value
+sb_script:
+	.word sb_depth, map_depth ; cave depth (level)
+	.word sb_hp, player_hp
+	.word sb_hp + 3, player_maxhp
+	.word sb_mp, player_mp
+	.word sb_mp + 3, player_maxmp
+	.word sb_armor, player_armor
+	.word sb_gems, player_gems
+	.word 0
+update_sidebar:
+	; format the player data
+	mov #sb_script, r3
+1$:	mov (r3)+, r1
+	beq repaint_sidebar$$
+	mov @(r3)+, r0
+	mov #2, r2
+	call @#format_num
+	br 1$
+repaint_sidebar$$:
+	mov #1, @#sidebar_updated
+	ret
+draw_sidebar:
+	tst (pc)+
+sidebar_updated:
+	.word 1
+	beq 0$
+	; print the player status
+	mov #sidebar_text, r0
+	mov #11.*C_SCRWID-16.-C_BORDER+C_VADDR, -(SP) ; 1st line of the sidebar
+1$:	tstb @r0 ; empty string terminates the list
+	beq 2$
+	mov @sp, r1
+	call @#draw_pretty_string
+	add #10.*C_SCRWID, @sp
+	br 1$
+2$:	; draw eggs
+	mov #P_EGGS, r0
+	mov @sp, r1
+	movb @#player_eggs, r2
+	mov #6, r3
+4$:	tst (r1)+
+	asr r2
+	bcc 5$
+	call @#draw_sprite_raw
+5$:	inc r0
+	sob r3, 4$
+	add #10.*C_SCRWID, @sp
+	; print inventory
+	mov #11 * 2, r3
+	mov #sb_inv, r0
+3$:	mov @sp, r1
+	call @#draw_pretty_string
+	add #10.*C_SCRWID, @sp
+	sob r3, 3$
+	; done
+	tst (sp)+
+	clr @#sidebar_updated
+0$:	ret
+
+; formats a right-aligned number to a given buffer
+; r0 - number
+; r1 - buffer pointer
+; r2 - digits (max)
+format_num:
+	jsr r5, @#saveregs
+	; clear buffer
+	mov r2, r4
+1$:	movb #40, (r1)+
+	sob r4, 1$
+	cmp #5, r2
+	bhis 2$
+	mov #5, r2
+2$:	sub r2, r1
+	mov #dec_order + 12, r3
+	sub r2, r3
+	sub r2, r3
+3$:	mov #'0, r5
+	mov (r3)+, r4
+4$:	sub r4, r0
+	bcs 5$
+	inc r5
+	br 4$
+5$:	add r4, r0
+	movb r5, (r1)+
+	sob r2, 3$
+	jmp @#retreg
+
+dec_order:
+	.word 10000., 1000., 100., 10., 1, 0
+
+ttypes_free: ; tile types that are absolutely "free", that is, differ only by the decor
+	.byte TC_EMPTY, TC_GRASS, TC_FLOOR, TC_FLOORG, 0
+.even
+map_depth:
+	.word 1.
+
+
+@include drawtext.mac
+@include strings.mac
+@include util.mac
+@include litter.mac
+@include entities.mac
+@include inventory.mac
+@include player.mac
+@include monsters.mac
+@include casters.mac
+@include tiledraw.mac
+@include drawpic.mac
+@include endgame.mac
+@include shortcalls.mac
+@include font.mac
+
+pics_start:
+@include tiles.mac
+@include pics.mac
+pics_end:
+
+@include etypes.mac
+
+badlands: ; everything after this label will be erased at the game start
+@include title.mac

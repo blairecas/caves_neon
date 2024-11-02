@@ -1,0 +1,80 @@
+;
+; FIXME this is a hack and should be moved to appropriate place
+;
+draw_title:
+;	mov sp, @#rest_sp
+;	mov @#4, @#rest_t4
+;	mov #trap10, @#4
+;	mov #340, @#6
+;	mov #040000, @#177662
+;	mov #177662, @#m11p
+;	mov #16200, @#177716
+;	mov #16200, @#m11p2
+; flip the gfx
+;br trap10 ; disabled for now
+;	mov #pics_start, r1
+;	mov #pics_end, r2
+;1$:	mov @r1, r0
+;	mov r0, r3
+;	bic #52525, r3
+;	bic r3, r0
+;	asl r0
+;	clc
+;	ror r3
+;	bis r3, r0
+;	mov r0, (r1)+
+;	cmp r1, r2
+;	blo 1$
+; end of 11M init
+;trap10:	mov (pc)+, sp
+;rest_sp:
+;	.word 1000
+;	mov (pc)+, @(pc)+
+;rest_t4:
+;	.word 100000, 4
+;
+; Tile screen for Caves ...
+;
+;draw_title:
+	mov	#12.*C_SCRWID+C_VADDR, R1
+	jsr	R4,  print_textwall$
+	.word	title_text
+	return
+
+title_text:
+.byte 40, 3, 'F, 2
+.asciz "or a long time, you've heard"
+.asciz "stories about deep cave nearby,"
+.asciz "former lair of the evil wizard."
+.byte 40, 3, 'S, 2
+.asciz "ome say there are untold"
+.asciz "riches hidden in the depths."
+.byte 40, 3, 'S, 2
+.asciz "ome say there are ungodly"
+.asciz "monsters ready to devour you."
+.byte 40, 3, 'S, 2
+.asciz "ome say both."
+.byte 40, 3, 'T, 2
+.asciz "here were warriors and rogues,"
+.asciz "priests and pirates, jesters and"
+.asciz "knights who entered the cave,"
+.asciz "never to return."
+.byte 40, 3, 'T, 2
+.asciz "heir fate is unknown, since"
+.asciz "nobody have seen them ever after."
+.asciz "Maybe they have found the riches"
+.asciz "they sought. Maybe they have been"
+.asciz "slain."
+.byte 40, 3, 'M, 2
+.asciz "aybe both."
+.byte 40, 3, 'N, 2
+.asciz "o more stories - You have to"
+.asciz "see it for yourself!"
+.byte 40, 3, 'A, 2
+.asciz "fter the short travel, you are"
+.asciz "standing in front of the ancient"
+.asciz "temple built over the entrance."
+.byte 1
+.asciz "    === The cave avaits! ==="
+.byte 0
+.even

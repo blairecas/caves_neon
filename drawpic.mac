@@ -1,0 +1,342 @@
+;
+; Sprite rendering routines
+;
+player_mask = 600 - 24.
+player_sprite = player_mask - 24.
+
+;
+; FIXME mark map tiles as drawn (liquids?)
+;
+; Draws a generic sprite
+; Unsafe -- does not check coordinates
+;
+; r0 -- sprite ID (200 + xxx)
+; r1 -- map x
+; r2 -- map y
+spr_tmp_mirror = scratchpad
+spr_tmp_mask = spr_tmp_mirror + 44. ;24?
+draw_sprite:
+	jsr r5, @#saveregs
+	call @#map_ptr
+	mov @r3, r3
+	; this is a (partial) duplicate of draw_tile
+	bic #TC_INVCODEMASK, r3
+	asl r3
+	mov r3, r5
+	asl r3
+	asl r3
+	add r3, r5
+	add #tiledata, r5
+	; get sprite address
+	; FIXME -- a duplicate of code from ..._shared -- reorder?
+	mov r0, r3
+	bic #177600, r3 ; clear flags, etc from the sprite ID
+	asl r3
+	asl r3
+	mov r3, r4
+	asl r3
+	asl r3
+	add r3, r4
+	add #sprite_data, r4
+	; get screen address
+	call @#draw_addr$
+	mov r1, -(sp)
+	mov r4, r1
+	tst r0
+	bmi draw_sprite_mirrored$$
+	mov r1, -(sp)
+	br draw_sprite_automasked$$
+draw_sprite_mirrored$$:
+	; mirror to scratchpad
+	mov #spr_tmp_mirror, r3
+	mov r3, -(sp)
+	mov #10., r2 ; line count
+	mov r5, -(sp)
+	call @#mirror_sprite$
+	mov (sp)+, r5
+	; build the mask
+	mov #spr_tmp_mirror, r1
+draw_sprite_automasked$$:
+	mov #10., r2 ; sprite height
+	mov #spr_tmp_mask, r3
+	call @#calc_mask$$
+	; TODO cache?
+	mov (sp)+, r2
+	mov (sp)+, r1
+	mov #spr_tmp_mask, r3
+	mov #C_SCRWID, r4
+;sub r4, r1
+	jmp @#draw_shared$$
+
+	; HACK to draw the killed player in the generic way
+draw_dead_player:
+	mov #P_PLAYER_CORPSE, r0
+	br draw_sprite
+;
+; Used to simply draw sprites off-map, e.g. in sidebar, menus, etc.
+;
+; r0 -- sprite ID (200 + xxx)
+; r1 -- screen address
+;
+draw_sprite_raw:
+	jsr r5, @#saveregs
+draw_sprite_shared$$:
+	bic #177600, r0 ; clear flags, etc from the sprite ID
+	asl r0
+	asl r0
+	mov r0, r2
+	asl r0
+	asl r0
+	add r0, r2
+	add #sprite_data, r2
+	; old bulk rendering ...
+draw_sprite_bulk$$:
+	mov (r2)+, (r1)
+	mov (r2)+, 01.*C_SCRWID(r1)
+	mov (r2)+, 02.*C_SCRWID(r1)
+	mov (r2)+, 03.*C_SCRWID(r1)
+	mov (r2)+, 04.*C_SCRWID(r1)
+	mov (r2)+, 05.*C_SCRWID(r1)
+	mov (r2)+, 06.*C_SCRWID(r1)
+	mov (r2)+, 07.*C_SCRWID(r1)
+	mov (r2)+, 08.*C_SCRWID(r1)
+	mov (r2)+, 09.*C_SCRWID(r1)
+	jmp @#retreg
+
+; Draws a player
+; Unsafe -- does not check coordinates
+;
+; r1 -- map x
+; r2 -- map y
+;
+; FIXME mark map tiles as drawn(?)
+;
+draw_player$:
+	movb @#player_x, r1
+	movb @#player_y, r2
+;draw_player_xy$$:
+	bit #is_dead, @#ent_player
+	bne draw_dead_player
+	jsr r5, @#saveregs
+	call @#map_ptr
+	mov @r3, r3
+	; this is a (partial) duplicate of draw_tile
+	bic #TC_INVCODEMASK, r3
+	asl r3
+	mov r3, r5
+	asl r3
+	asl r3
+	add r3, r5
+	add #tiledata, r5
+	;
+	call @#draw_addr$
+	mov #player_sprite, r2
+	mov #player_mask, r3
+	mov #C_SCRWID, r4
+	sub r4, r1
+	; -1
+	bic (r3)+, @r1
+	bis (r2)+, @r1
+	add r4, r1
+draw_shared$$:
+	; 0
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	add r4, r1
+	; 1
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	add r4, r1
+	; 2
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	add r4, r1
+	; 3
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	add r4, r1
+	; 4
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	add r4, r1
+	; 5
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	add r4, r1
+	; 6
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	add r4, r1
+	; 7
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	add r4, r1
+	; 8
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	add r4, r1
+	; 9
+	mov (r5)+, r0
+	bic (r3)+, r0
+	bis (r2)+, r0
+	mov r0, @r1
+	jmp @#retreg
+
+;
+; Calculates a tile address on screen
+;
+; r1 -- tile x
+; r2 -- tile y
+;
+; Clobbers:
+; r2, r3
+;
+; Returns:
+; r1 -- tile address
+;
+draw_addr$:
+	mov	R3, -(SP)				; i don't know do we need to save it
+	asl	R1
+	inc	R2
+	mul	#10.*C_SCRWID, R2
+	add	R3, R1
+	add	#C_VADDR, R1
+	mov	(SP)+, R3
+;	movb scrytab(r2), r2
+;	swab r2
+;	clrb r2
+;	ror r2
+;	asl r1
+;	add r2, r1
+	ret
+
+
+update_player_image$:
+	; copy player image to the local buffer
+	mov #i_player, r1
+	mov #player_sprite, r3
+	mov #11., r2
+	mov @#player_stance, r4
+	beq 4$
+5$:	add r2, r1
+	add r2, r1
+	sob r4, 5$
+4$:	tst @#plook_left
+	beq 2$ ; sprite table also shows the left-looking player
+1$:	mov (r1)+, (r3)+
+	sob r2, 1$
+	br 3$
+2$:	call @#mirror_sprite$
+3$:	; fallthrough to masks generation
+	; pass #1 -- convert from colors to mask
+	mov #player_sprite, r1
+	mov #11., r2 ; sprite height
+	mov #player_mask, r3
+calc_mask$$: ; external entry point for other sprites (different size, etc)
+	mov r2, -(sp)
+	mov r3, -(sp)
+	clr (r3)+
+1$:	mov (r1)+, r0
+	beq 2$
+	mov r0, r4
+	asr r4
+	bic #125252, r4
+	bis r4, r0
+	mov r0, r4
+	asl r4
+	bic #52525, r4
+	bis r4, r0
+	; r0 -- exact mask
+	; br 2$ ; uncomment to skip expansion
+	; now expand the mask horisontally
+	mov r0, r4
+	asl r4
+	asl r4
+	bis r0, r4
+	clc ; ?
+	ror r0
+	asr r0
+	bis r4, r0
+	; store
+2$:	mov r0, (r3)+
+	sob r2, 1$
+	; expand the mask verticaly
+	mov (sp)+, r1 ; mask
+	mov (sp)+, r2 ; height
+	dec r2
+	mov r1, r3 ; shifted vertically for blending
+	tst (r3)+
+	bis (r3)+, @r1
+3$:	mov (r3)+, r0
+	bis r0, (r1)+
+	bis r0, @r1
+	sob r2, 3$
+	ret
+; r0 -- player is facing left
+set_player_left$:
+	cmp r0, (pc)+
+plook_left:
+	.word 1 ; initially player is looking to left
+	beq 0$
+	mov r0, @#plook_left
+	mov #player_mask, r1
+	mov #12., r2
+	mov r1, r3
+	call @#mirror_sprite$
+	mov #player_sprite, r1
+	mov #11., r2
+	mov r1, r3
+	call @#mirror_sprite$
+0$:	ret
+;
+; Mirrors the 4-color word wide sprite
+; r1 -- source
+; r2 -- line count
+; r3 -- destination
+;
+mirror_sprite$:
+1$:	mov (r1)+, r0
+	beq 3$
+	mov #1, r4
+2$:	asl r5
+	asr r0
+	rol r5
+	asr r0
+	rol r4
+	asl r4
+	bcc 2$
+	bis r5, r4
+	mov r4, (r3)+
+	sob r2, 1$
+	ret
+3$:	mov r0, (r3)+
+	sob r2, 1$
+	ret
+;
+; screen address row table for tiles (high byte, doubled, decode via swab & ror)
+;scrytab0:
+;	.byte 200
+;scrytab:
+;	.byte 205, 212, 217, 224, 231, 236, 243, 250
+;	.byte 255, 262, 267, 274, 301, 306, 313, 320
+;	.byte 325, 332, 337, 344, 351, 356, 363, 370
+;.even
+

@@ -1,0 +1,25 @@
+;
+; Global definions for levels and their maps
+;
+
+; memory allocation
+map_side = 24.
+map_stride = map_side * 2
+map_area = map_side * map_side + 1
+map_size = map_area * 2
+map_negsize = 0 - map_size
+
+; raw map data part (can be ignored in case of tiles)
+map_blue = 400
+map_green = 1000
+map_red = 1400
+map_seen = 2000
+; 4000
+map_drawn = 10000 ; this tile is already drawn and did not change
+map_vis = 20000
+map_tag = 40000 ; temporary flag for tagging tiles; used by flood filler, etc
+map_empty = 100000 ; to accelerate raycaser by using signum bit for check
+
+map_flags = 176000 ; vis, etc
+
+map_blood = TC_EMPTY ! TC_DECAL

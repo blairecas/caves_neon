@@ -1,0 +1,58 @@
+;
+; Utility functions
+;
+
+
+strlen:
+	mov r1, r0
+1$:	tstb (r0)+
+	bne 1$
+	sub r1, r0
+	dec r0 ; do not count the terminal zero
+	ret
+
+strcpy:	mov r1, -(sp)
+	mov r2, -(sp)
+1$:	movb (r1)+, (r2)+
+	bne 1$
+	mov (sp)+, r2
+	mov (sp)+, r1
+	ret
+
+$saf:	movb r0, (r2)+
+str_append:
+	movb (r1)+, r0
+	bne $saf
+	clrb @r2
+	ret
+
+memset:	mov r1, -(sp)
+	mov r2, -(sp)
+1$:	movb r0, (r1)+
+	sob r2, 1$
+	mov (sp)+, r2
+	mov (sp)+, r1
+	ret
+
+;
+; alternative version of saving the registers
+;
+; should be called right after entering the subroutine by JSR R5, ...;
+; return from it should be done by a common RET (RTS PC)
+;
+saveregs1:
+	mov r4, -(sp)
+	mov r3, -(sp)
+	mov r2, -(sp)
+	mov r1, -(sp)
+	mov r0, -(sp)
+	mov r5, -(sp) ; return address to procedure
+	mov 14(sp), r5
+	call @(sp)+
+	mov (sp)+, r0
+	mov (sp)+, r1
+	mov (sp)+, r2
+	mov (sp)+, r3
+	mov (sp)+, r4
+	mov (sp)+, r5
+	ret

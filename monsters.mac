@@ -1,0 +1,341 @@
+;
+; Generic monster implementation
+;
+
+;
+; A single turn of monster simulation
+; Returns: carry flag if game state was updated
+;
+mons_turn:
+	; find a living (or at least, undead) monster
+	mov #ent_pool, r4
+	mov #ent_poolsize, r5
+1$:	mov @r4, r3
+	bit #is_monster, r3
+	beq 2$
+	bit #is_dead ! is_hidden, r3
+	bne 2$ ; not available as actor
+	bit #is_explosive, r3
+	beq 8$
+	dec ent_hp_w(r4) ; limited lifetime for projectiles
+	; second death check, will be triggered for indirect death effects
+8$:	tst ent_hp_w(r4)
+	beq 99$
+	bmi 99$
+	; ok, seems to be valid
+	movb ent_x(r4), r1
+	movb ent_y(r4), r2
+	; 50% chance to ignore the enemy
+	; FIXME berserk mode at least
+	call @#crand
+	; 50% random wandering chance even in combat (maybe 25%?)
+	aslb r0
+	; disabled random wandering in combat since it makes enemy stupid
+	; TODO maybe reenable it at distance or in tights?
+	;bcs 3$
+	; mov r0, r3 ; overrides flags!
+	mov ent_enemy(r4), r0
+	bne 10$ ; got an enemy -- enter the combat logic
+	; check if we should target the player
+	tstb ent_aggression(r4)
+	;bmi 3$ ; alas, there is no good check for >0 ..
+	beq 3$
+	; FIXME only casters should target at unlimited range
+	mov #ent_player, r0
+	mov r0, ent_enemy(r4)
+	br 10$
+	; so far, the simplest AI: random wandering
+3$:	call @#crand ; will be restricted to range by mons_trymoveto
+4$:	call @#mons_trymoveto
+	tst r0
+	bmi 2$ ; hit the wall
+	bne 5$ ; attack!
+	; no attack, and can move
+	movb r1, ent_x(r4)
+	movb r2, ent_y(r4)
+2$:	add #ent_size, r4
+	sob r5, 1$
+0$:	scc ; HACK so far it always says that game was updated
+	ret
+99$:	call @#mons_die ; zero/neagtive hp, but still alive? Kill it!
+	br 2$
+15$:	clr ent_enemy(r4) ; lost contact!
+	br 3$
+; combat -- decide the movement direction
+; TODO better algo! (pathfinding?)
+10$:	bit #is_dead + is_hidden, @r0 ; is our enemy still available?
+	bne 15$
+	call @#ai_consider_casting_
+	bcs 20$ ; yes, we have selected the appropriate spell
+16$:	mov r4, -(sp)
+	mov r5, -(sp)
+	clr -(sp)
+	; TODO: "keep distance" mode for casters
+	tstb ent_aggression(r4)
+	bpl 13$
+	mov #2, @sp ; preselect opposite drection in case of fear
+13$:	; find best angle to the target
+	movb ent_x(r0), r4
+	sub r1, r4
+	movb ent_y(r0), r5
+	sub r2, r5
+	; select a random axis
+	; TODO select a best direction instead of random (?)
+	mov (sp)+, r0
+	tst r5
+	beq 11$ ; prefer X axis if Y is zero
+	tst r4
+	beq 14$ ; prefer Y axis if X is zero
+	call @#rand_bool
+	bcs 11$ ; otherwise, random
+14$:	mov r5, r4
+	inc r0
+11$:	tst r4
+	bpl 12$
+	add #2, r0
+	; TODO fall back to random if move is not possible (hit the wall)
+12$:	mov (sp)+, r5
+	mov (sp)+, r4
+	br 4$
+; attack; note that victim is NOT automatically recorded as enemy;
+; it should retaliate to be recorded as such
+5$:	mov r0, -(sp) ; store target
+	bit #is_player, @r0
+	bne 7$
+	mov @r4, r3
+	bit #is_explosive, r3
+	beq 6$
+	; projectiles do an extra check to ensure that target is valid
+; + Blaire
+;	bic #177777 ^ <is_fire_element ! is_acid_element>, r3
+	bic #^C<is_fire_element ! is_acid_element>, r3
+; +
+	bic @r0, r3
+	bne 6$ ; target is NOT immune, continue with the attack
+	tst (sp)+ ; no need for target
+	cmp r0, ent_enemy(r4)
+	bne 2$
+	clr ent_enemy(r4)  ; ... and pretend that nothing is happened
+	br 2$
+7$:	mov r4, r0
+	call @#notify_attacked
+6$:	call @#mons_calc_damroll
+	mov r4, r3
+	mov (sp)+, r4
+	call @#mons_damage
+	mov r3, r4
+	br 2$
+; spellcasting
+20$:	mov r0, r3
+	call @#mons_spawn
+	br 2$
+;
+; Calculates a damage roll
+;
+; r4 -- entity ptr
+;
+; Results:
+;
+; r0 -- damage roll
+; TODO this is generic and goes for weapons and player too...
+;
+mons_calc_damroll:
+	mov r1, -(sp)
+	clr r0
+	clr r1
+	bisb ent_dmgrange(r4), r1
+	call @#randx
+	clr r1
+	bisb ent_basedmg(r4), r1
+	add r1, r0
+	mov (sp)+, r1
+	ret
+
+;
+; Delivers damage do the monster
+;
+; r3 -- attacker
+; r4 -- entity ptr
+; r0 -- damage amount
+;
+; Results:
+;
+; r0 -- remaining hp
+;
+mons_damage:
+	; -- attack sound
+	mov	#SndAtk, SoundCur
+	mov r1, -(sp)
+	mov r2, -(sp)
+	clr r1
+	bisb ent_armor(r4), r1
+	sub r1, r0
+	blos 10$ ; didn't punch through
+	; first, spill the blood
+	; TODO amount should depend on damage
+	movb ent_x(r4), r1
+	movb ent_y(r4), r2
+	call @#gen_bloodspot
+	; remember attacker, if any
+	tst r3
+	beq 1$
+	mov r3, ent_enemy(r4)
+	; damage both aggression ...
+1$:	movb ent_aggression(r4), r1
+	sub r0, r1 ; technically could create a rage fit when overflows :)
+	movb r1, ent_aggression(r4)
+	; ... and HP
+	sub r0, ent_hp_w(r4)
+; Signed comparison to allow negative damage weapons
+	bgt 10$ ; HP is greater, no kill
+	; -- die sound
+	mov	#SndDie, SoundCur
+	call @#mons_die
+10$:	mov (sp)+, r2
+	mov (sp)+, r1
+	mov ent_hp_w(r4), r0
+	ret
+;
+; Kills monster
+; r3 -- attacker ptr
+; r4 -- entity ptr
+; r0 -- remaining hp (?)
+;
+; TODO different deaths, esp. based on overkill
+mons_die:
+	jsr r5, @#saveregs
+	bit #is_player, @r4
+	beq 1$
+	jmp @#player_die
+1$:	; count corpses and remove extras
+	call @#ent_limit_corpses
+	movb ent_x(r4), r1
+	movb ent_y(r4), r2
+	bit #is_explosive, @r4
+	bne 8$
+	clr ent_hp_w(r4) ; no negative HPs, please!
+	bis #is_dead, @r4
+	; transform to corpse
+	tstb ent_name2(r4)
+	beq 2$
+	; got a second name, requalify it as first
+	; e.g. "Cave Rat" -> "Rat"
+	movb ent_name2(r4), ent_name1(r4)
+2$:	movb #s_corpse, ent_name2(r4)
+	mov #P_CORSPE, ent_sprite(r4)
+	; drop loot, if was capable of carrying something useful
+	bit #is_humanoid, @r4
+	beq 9$
+	mov #ET_RED_POTION, r3
+	bit #is_caster, @r4
+	beq 3$
+	inc r3 ; a blue potion; assumes that potions are ordered
+3$:	call @#ent_create_bytype3 ; FIXME x,y
+	mov r3, r0
+	call @#map_dropnear
+	; TODO loot disappears? At least one fallen item appears down there? Corpse too?
+9$:	call @#map_get ; test if we are on stairs; if so -- disappear!
+	bic #TC_INVTYPEMASK, r0
+	cmp #TC_STAIRS & TC_TYPEMASK, r0 ; do not drop corpses on stairs (makes them barely visible)
+	bne 10$ ; TODO extract all tile checks to proc
+100$:	clr @r4 ; remove!
+	; TODO update map!
+10$:	jmp @#retreg
+; exploded; either transform or remove
+8$:	bit #is_acid_element + is_fire_element, @r4
+	beq 100$ ; no damage, just vanishes
+	; damage target, if any to be found
+	; FIXME this code is pointless, should scan the area instead
+	bis #is_hidden, @r4
+	call @#ent_find0
+	mov r3, -(sp)
+	mov r4, r3
+	mov r0, r4
+	beq 6$
+	call @#mons_damage
+6$:	mov r3, r4
+	mov (sp)+, r3
+	; transform to explosion
+	clr ent_hp_w(r4)
+	mov #is_monster + is_explosive, @r4
+	mov #P_EXPLOSION, ent_sprite(r4)
+	br 10$
+;
+; Spawns a monster near (or on) the caster; it will target the caster's target,
+; so it is used for both minions and projectiles
+;
+; r3 -- entity type
+; r4 -- summoner ptr, or zero if none
+;
+mons_spawn:
+	jsr r5, @#saveregs
+	clr -(sp)
+	tst r4
+	bne 1$
+	call @#map_find_free_tile
+	br 2$
+1$:	movb ent_x(r4), r1
+	movb ent_y(r4), r2
+	mov ent_enemy(r4), @sp
+2$:	call @#ent_create_bytype3
+	tst r3
+	beq 10$
+	mov @sp, ent_enemy(r3)
+	movb #100, ent_aggression(r3)
+	add ent_hp_w(r3), @#ai_cast_cooldown
+10$:	tst (sp)+
+	; count corpses and remove extras
+	call @#ent_limit_corpses
+	jmp @#retreg
+;
+; Checks if movement is possible, and applies it
+;
+; r0 -- direction
+; r1 -- x
+; r2 -- y
+; r4 -- entity ref
+;
+; Returns:
+; r0 -- result:
+;       0 -- moved
+;       <0 -- hit the wall
+;       1+ -- hit an entity, ptr returned
+; r1 -- new x
+; r2 -- new y
+
+; TODO octants?
+mons_trymoveto:
+	bic #177774, r0
+	asl r0
+	asl r0
+	asl r0
+	add #dirs, r0
+	mov r5, -(sp)
+	mov (r0)+, r5
+	beq 1$
+	add r5, r1
+	; x movement, apply a left/right sprite flip
+	; TODO prettier code?
+	bic #77777, r5
+	bic r5, ent_sprite(r4)
+	add #100000, r5
+	bis r5, ent_sprite(r4)
+	;
+1$:	add @r0, r2
+	mov (sp)+, r5
+	call @#map_get
+	cmpb #TC_LAST_WALKABLE, r0
+	bcs 9$
+	; ok, let's see if there is a monster
+	call @#ent_find0
+	tst r0
+	beq 0$
+	bit #is_monster + is_player, @r0
+	beq 0$
+	bit #is_dead, @r0
+	bne 0$
+	ret
+0$:	clr r0
+	ret
+9$:	mov #177777, r0
+	ret

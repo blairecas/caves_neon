@@ -1,0 +1,311 @@
+	.title	CPU
+	.enabl	LC, AMA
+
+; 'main' file of game code
+; mostly for Neon initialization / show title screen
+; core game code is in caves.mac file, 1000...40000
+; then some Neon initialization / title screen on 40000..5xxxx
+; screen buffer moved to 60000 addr
+
+@include ap16mac.mac
+
+.macro ret
+	return
+.endm
+
+C_VADDR		= 60000				; BK0010 was 40000
+C_SCRWID	= 68.				; BK0010 was 64.
+C_BORDER	= 2.				; left/right border bytes count
+C_VSIZE		= 256.*C_SCRWID
+C_VAEND		= C_VADDR + C_VSIZE
+
+C_KEY_ESC	= 33
+C_KEY_SPACE	= 40
+C_KEY_ENTER	= 15
+C_KEY_K1	= 3
+C_KEY_UP	= 101
+C_KEY_DOWN	= 102
+C_KEY_RIGHT	= 103
+C_KEY_LEFT	= 104
+
+C_KBDCSR	= 177560
+C_KBDBUF	= 177562
+
+; //////////////////////////////////////////////////////////////////////////////
+; // Main code
+; //////////////////////////////////////////////////////////////////////////////
+
+	.asect
+	.=1000
+
+@include caves.mac
+
+
+; //////////////////////////////////////////////////////////////////////////////
+; // Neon additions
+; //////////////////////////////////////////////////////////////////////////////
+
+	.asect
+	.=40000
+
+NeonInit:
+	call 	ClearScreen
+	call	VSyncInit
+	call	WindowInit
+	call	TitleScreen
+	call	WaitKey
+	call 	ClearScreen
+	return
+
+NeonExit:
+	mov	#1000, SP			; just in case
+	call	WindowFree
+	call	VSyncFree
+	clr	R0				; .hreset (and why we need it?)
+	emt	350
+
+
+; //////////////////////////////////////////////////////////////////////////////
+; // Utils
+; //////////////////////////////////////////////////////////////////////////////
+
+ClearScreen:
+	clr	R0
+	mov	#-3*C_SCRWID+C_VADDR, R1			; -3 lines (!!!)
+	mov	#3*C_SCRWID+C_VSIZE/8., R2			; it's because of Neon borders and to better centering
+10$:	mov	R0, (R1)+
+	mov	R0, (R1)+
+	mov	R0, (R1)+
+	mov	R0, (R1)+
+	sob	R2, 10$
+	return
+
+
+WaitKey:
+	tstb	C_KBDCSR
+	bpl	WaitKey
+20$:	movb	C_KBDBUF, R0
+	tstb	C_KBDCSR
+	bmi	20$
+	return
+
+
+; ZX0 v2.2 standart unpacker
+; original ZX0 encoder/decoder (c) Einar Saukas & Urusergi
+; PDP11 version by reddie, 02-may-2024 (upd)
+; R0 - source addr, R1 - dest addr
+Unpack:	clr	R2
+	movb	#200, R3
+	sxt	R5
+10$:	call	50$
+	movb	(R0)+, (R1)+
+	sob	R2, .-2
+	aslb	R3
+	bcs	30$
+	call	50$
+20$:	mov	R1, R4
+	add	R5, R4
+	movb	(R4)+, (R1)+
+	sob	R2, .-2
+	aslb	R3
+	bcc	10$
+30$:	mov	#-2, R2
+	call	60$
+	incb	R2
+	bne	.+4
+40$:	return
+	swab	R2
+	mov	R2, R5
+	clrb	R5
+	bisb	(R0)+, R5
+	asr	R5
+	mov	#1, R2
+	bcs	.+6
+	call	80$
+	inc	R2
+	br	20$
+50$:	incb	R2
+60$:	aslb	R3
+	bne	70$
+	movb	(R0)+, R3
+	rolb	R3
+70$:	bcs	40$
+80$:	aslb	R3
+	rol	R2
+	br	60$
+
+
+; //////////////////////////////////////////////////////////////////////////////
+; // Windows
+; //////////////////////////////////////////////////////////////////////////////
+
+BkwScrn:	.word	0
+Bkw100:		.word	0
+
+VsyncInit:
+	mfhlt	#V.Scrn
+	mov	R0, BkwScrn
+	mov	#7126, R0			; set counter for 50Hz (instead of .. 60? 64?)
+	mthlt	#V.Scrn
+	mov	@#100, Bkw100
+	mov	#VsyInt, @#100
+	return
+
+VSyncFree:
+	mov	Bkw100, @#100
+	mov	BkwScrn, R0
+	mthlt	#V.Scrn
+	return
+
+; (!) save/restore registers, it's not a separate process
+VsyInt:	inc	(PC)+
+VsyCnt:	.word	0				; just counter
+	inc	(PC)+
+AniCnt:	.word	0				; for water animation
+	; sound proc
+	mov	R0, -(SP)
+	mov	R3, -(SP)
+	call	PlaySound
+	mov	(SP)+, R3
+	mov	(SP)+, R0
+	rti
+
+
+WindowInit:
+	mov	#PaletteConfig, @#177530	; create palette
+	nop					; NOP next to a system call is necessary
+	mov	PaletteId, AreaPalette
+	mov	#AreaConfig, @#177530		; create screen buffer (so called "area")
+	nop
+	mov	AreaConfig+2, @#AreaId		; put a screen buffer id to the window description
+	mov	#ViewConfig, @#177530		; create window (so called "view")	
+	nop
+	return
+
+
+WindowFree:
+	; free window and palette
+	mov	#2, AreaConfig			; command "free area"
+	mov	#AreaConfig, @#177530		; free area and its view(s)
+	nop
+	return
+
+
+; palette configuration
+PaletteConfig:	.word	17			; command "create palette"
+PaletteId:	.byte	1			; 4 colors
+		.byte	0			; palette #		
+PaletteBuf:	; palette words [G5 G4 G3 R4 R3 R2 B4 B3] [G2 G1 G0 R1 R0 B2 B1 B0]
+		.byte	0,0,0,0,0,0,0,0,0,0,0,0 ; 12. not used bytes (except #0 - border)
+		.byte	0, 3, 340, 34 		; upper bytes of palette words
+		.byte	0,0,0,0,0,0,0,0,0,0,0,0 ; 12. not used bytes (except #0)
+		.byte	0, 7, 340, 30 		; lower bytes of palette words
+
+; screen buffer (so called "area") description
+AreaConfig:	.word	46			; command "create area"
+		.word	-3*C_SCRWID+C_VADDR	; address of screen buffer or area id (-3 lines because of borders/better look)
+		.word	256.    		; rows count
+		.word	C_SCRWID		; bytes count in row
+AreaPalette:	.byte	1			; 4 colors
+		.byte	0			; palette 0
+
+; window (so called "view") description
+ViewConfig:	.word	4			; command "create view"
+ViewId:		.word	0			; view id
+AreaId:		.word	1			; area id
+		.word	0			; vertical content offset
+		.word	0			; horisontal content offset
+		.word	20.			; top position (row)
+		.word	255.+20.    		; bottom position (row)
+		.word	4. ; 5.			; left position (column)
+		.word	32. ; 20.		; right position (column)
+		.byte	1,2			; scale x,y (0 = *4, 1 = *2, 2 = *1)
+
+
+; simple covox 1-bit sound
+SoundCur:	.word	0
+PlaySound:
+	mov	SoundCur, R0
+	beq	99$
+	clr	R3
+50$:	bisb	(R0)+, R3
+	beq	90$
+	cmp	R3, #1
+	bne	60$
+	mov	R0, SoundCur
+	return
+60$:	asl	R3
+	movb	#377, @#161032
+	sob	R3, .
+	bisb	(R0)+, R3	
+	beq	90$
+	cmp	R3, #1
+	bne	70$
+	mov	R0, SoundCur
+	return
+70$:	asl	R3
+	movb	#000, @#161032
+	sob	R3, .
+	br	50$
+90$:	clr	SoundCur
+99$:	return
+
+	;
+	; // RADIX 10 (!) RADIX 10 (!) RADIX 10 (!)
+	;
+	.radix	10
+
+SndTick:	
+	.byte	050, 050
+	.byte	0
+SndBump:	
+	.byte	194, 079, 037, 026, 075, 025, 210, 041
+	.byte	037, 076, 026, 052
+	.byte	0
+SndUse:	
+	.byte	024, 084, 057, 089, 063, 095, 074, 097
+	.byte	085, 105, 090, 112, 101, 116, 109, 122
+	.byte	118, 128, 125, 136, 134, 141, 142, 148
+	.byte	149, 156, 157, 162, 164, 169, 172, 176
+	.byte	0
+SndTake:
+	.byte	250, 240, 230, 220, 210, 200, 190, 180
+	.byte	170, 160, 150, 140, 130, 120, 110, 100
+	.byte	090, 080, 070, 060, 055, 050, 045, 040
+	.byte	035, 030
+	.byte	0
+SndAtk:	
+	.byte	130, 100, 090, 080, 090, 100, 130, 140
+	.byte	220, 200, 180, 170, 180, 200, 220, 230
+	.byte	050, 045, 040, 035, 040, 200, 040, 050
+	.byte	0
+SndDie:
+	.byte	 10, 230,  10, 216,  14, 176,  12, 155, 1
+	.byte	 14, 144,  16, 128,  10, 112,  14, 123, 1
+	.byte	 10, 230,  10, 250,  30, 210,  28, 201, 1
+	.byte	 24, 144,  26, 128,  20, 112,  20, 132, 1
+	.byte	 36,  80,  32, 128,  34, 176,  32, 185, 1
+	.byte	 26, 192,  28, 208,  24, 240,  21, 235, 1
+	.byte	 26, 192,  28, 128,  24, 176,  28, 200, 1
+	.byte	 36,  80,  32,  80,  32,  64,  36,  85, 1
+	.byte	 46,  80,  42,  80,  42,  64,  46,  71, 1
+	.byte	0
+
+	.even
+	.radix	8
+
+
+; //////////////////////////////////////////////////////////////////////////////
+; // Title screen
+; //////////////////////////////////////////////////////////////////////////////
+
+TitleScreen:
+	mov	#TitleData, R0
+	mov	#C_VADDR, R1
+	jmp	Unpack
+	
+@include agraphics.mac
+
+
+CpuEnd:
+	.end	Start

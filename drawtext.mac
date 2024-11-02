@@ -1,0 +1,222 @@
+;
+;
+; Emulated text console
+; TODO extract to separate source file
+;
+
+; 8->16 bit expansion table address (0.5K)
+
+xptab = 37000
+xptab_guard$$ = xptab - 2
+xptab_guardcode = 143271
+
+; Clears to prompt/information line
+;
+; Inputs:
+;	None
+; Outputs:
+;	None
+;
+; Clobbers: r0, r1, r2
+;
+; FIXME -- unused?
+;clr_prompt$:
+;	mov #120, r2
+;	br clr8b$$
+
+;
+; Clears screen
+;
+; Inputs:
+;	None
+; Outputs:
+;	None
+;
+; Clobbers: r0, r1, r2
+;
+clscr$:	jmp	ClearScreen
+;	mov #4000, r2
+;clr8b$$:
+;	clr r0
+;	mov #40000, r1
+;1$:	mov r0, (r1)+
+;	mov r0, (r1)+
+;	mov r0, (r1)+
+;	mov r0, (r1)+
+;	sob r2, 1$
+;	ret
+
+;
+; Draws a null -- terminated string at given address
+;
+; Inputs:
+;	r0 - string address
+;	r1 - display address
+; Outputs:
+;	r0 - next address after the string
+;	r1 - next display address
+;
+; Clobbers: r0, r2-r5
+;
+draw_pretty_string:
+;drawstring:
+	jsr r5, @#saveregs
+	mov r0, r5
+	beq ret0 ; null pointer (?)
+	clr r0 ; default color
+1$:	clrb r0
+	bisb (r5)+, r0
+	beq ret0
+	bit #374, r0
+	bne 2$
+	swab r0 ; color code, not a character
+	br 1$
+2$:	mov r5, -(sp)
+	call @#drawchar
+	mov (sp)+, r5
+	add #2, r1
+;	bit #77, r1
+;	bne 1$
+;	; end of line, move to the next
+;	add	#9.*C_SCRWID, R1
+;	cmp	R1, #C_VAEND
+;	blo	1$
+;	sub	#C_VSIZE, R1
+	br	1$
+ret0:	mov r5, r0
+	mov r0, @sp
+	jmp @#retreg
+;
+; Draws a (wide) character at given address
+;
+; Inputs:
+;	r0 - character
+;	r1 - x
+;	r2 - y
+; Outputs:
+;	None
+;
+drawchar_at:
+	jsr r5, @#saveregs
+	mul	#10.*C_SCRWID, R2
+	asl	R1
+	add	R3, R1
+	add	#C_VADDR, R1
+	; x * 2 + y * 10.* 64.
+;	movb scrytab0(r2), r2
+;	swab r2
+;	clrb r2
+;	ror r2
+;	asl r1
+;	add r2, r1
+	call @#drawchar
+	jmp @#retreg
+;
+; Draws a (wide) character at given address
+;
+; Inputs:
+;	r0 - character
+;	r1 - display address
+; Outputs:
+;	None
+;
+; Clobbers:
+;	r2-r4
+;
+font_offset = font - <32. * 10>
+
+draw_spacechar$$:
+	;mov r0, -(sp)
+	clr r0
+	mov r0, (r1)
+	mov r0, 01*C_SCRWID(r1)
+	mov r0, 02*C_SCRWID(r1)
+	mov r0, 03*C_SCRWID(r1)
+	mov r0, 04*C_SCRWID(r1)
+	mov r0, 05*C_SCRWID(r1)
+	mov r0, 06*C_SCRWID(r1)
+	mov r0, 07*C_SCRWID(r1)
+	mov r0, 08*C_SCRWID(r1)
+	mov r0, 09*C_SCRWID(r1)
+	mov (sp)+, r0
+	ret
+drawchar:
+	mov r0, -(sp)
+; HACK for all caps!
+	cmpb #100, r0
+	bhi 99$
+	bic #40, r0
+99$:	cmpb #40, r0
+	beq draw_spacechar$$
+	;
+	call @#rebuild_xptab$$
+	; separate color and charcode
+	mov r0, r3
+	clrb r3
+	bic r3, r0
+	swab r3
+	bic #177774, r3
+	asl r3
+	mov colormasks(r3), r3
+	; address to char
+	asl r0
+	asl r0
+	asl r0
+	add #font_offset, r0
+	;
+	mov #10, r4
+1$:	clr r2
+	bisb (r0)+, r2
+	asl r2
+	mov xptab(r2), r2
+	bic r3, r2
+	mov r2, @r1
+	add #C_SCRWID, r1
+	sob r4, 1$
+	;
+	clr @r1
+	clr C_SCRWID(r1)
+	sub #08.*C_SCRWID, r1
+0$:	mov (sp)+, r0
+	ret
+colormasks: ; inverted; no color means green, just in case
+	.word 52525, 125252, 52525, 0
+;
+; Checks the expansion table guard, and rebuids it if guard is destroyed 
+;
+; TODO maybe registers are already saved?
+;
+rebuild_xptab$$:
+	mov r5, -(sp)
+	mov r4, -(sp)
+	mov @pc, r4 ; 12705
+	mov #xptab_guard$$, r5
+	cmp @r5, r4
+	beq 10$ ; guard is in place, table is presumably safe
+	mov r4, (r5)+
+	mov r3, -(sp)
+	mov r2, -(sp)
+	mov r1, -(sp)
+	mov r0, -(sp)
+	mov r5, r2
+	mov #3, r0 ; bit-set mask
+	mov #1, r4 ; loop counter keeper
+	clr (r2)+
+	; base loop
+1$:	mov r4, r3
+	mov r5, r1
+2$:	mov (r1)+, @r2
+	bis r0, (r2)+
+	sob r3, 2$
+	; end of loop
+	asl r4
+	asl r0
+	asl r0
+	bne 1$
+	mov (sp)+, r0
+	mov (sp)+, r1
+	mov (sp)+, r2
+	mov (sp)+, r3
+10$:	mov (sp)+, r4
+	mov (sp)+, r5
+	ret

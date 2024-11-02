@@ -1,0 +1,71 @@
+;
+; The game ening, whatever it could be.
+;
+; There are 3 endings:
+; BAD -- hero wears The Jagged Crown and becomes a new undead king
+; INDEFINITE -- hero takes The Jagged Crown out of the caves
+; GOOD -- hero destroys The Jagged Crown by dropping it into ???
+;
+
+;
+; ... but, as of now, we provide only the stub
+;
+ending_stub$:
+	mov #s_horrible, r5
+	jsr r4, @#print_textwall$$
+	.word s_stub1	
+	call	get_key
+	clr r5
+	jsr r4, @#print_textwall$$
+	.word s_stub2
+	call	get_key
+	jmp	NeonExit
+
+; Prints a wall of text
+; r0 -- text addr
+; r1 -- screen address
+; call with 
+print_textwall$$: ; hacky entry point for stub..
+	call 	clscr$
+	mov	R5, R0
+	mov	#70*C_SCRWID+C_VADDR, r1 ; print banner/header
+	call	draw_pretty_string
+	mov	#124*C_SCRWID+C_VADDR, r1
+print_textwall$:
+	mov	(R4)+, R0
+	mov	R1, -(SP)
+1$:	mov	(SP), R1
+	call	draw_pretty_string
+	add	#10.*C_SCRWID, (SP) ; #1500 is too big for the intro ...
+	tstb	(R0)
+	bne	1$
+	tst	(SP)+
+	rts	r4
+	
+s_stub1:
+	.byte 3
+	.ascii " The Undying"
+	.byte 2
+	.asciz " collapses to floor"
+	.asciz "and crumbles into dust."
+	.byte 40, 3, 'H, 2
+	.asciz "e is finally dead. Perhaps."
+	.asciz " "
+	.byte 1
+	.asciz "But you feel that it is not the"
+	.byte 1
+	.asciz " true end."
+	.byte 0
+s_stub2:
+	.asciz "Thanks for playing the"
+	.byte 3
+	.asciz "Caves of Noraf!"
+	.asciz " "
+	.asciz "Really complete game will be"
+	.asciz "released later!"
+	.byte 0
+
+s_goodend:
+s_badend:
+s_openend:
+.even

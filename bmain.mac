@@ -1,0 +1,148 @@
+	.title	CAVES
+	.mcall	.print .setto .exit
+	.enabl	LC ; do not use AMA here, contains relocatable code
+
+; sort of "loader" for game code
+; prints usage string, unpacks and run main program (that in acpu.mac)
+
+	.asect
+	.=1000
+
+C_KBDCSR	= 177560
+C_KBDBUF	= 177562
+
+C_LDR_LENGTH	= LoaderEnd - Loader
+C_LDR_START	= 100000 - C_LDR_LENGTH
+C_ZX0_LENGTH	= CpuBinEnd - CpuBin
+C_ZX0_START	= C_LDR_START - C_ZX0_LENGTH
+
+Start:	; try to get all memory from RT-11
+	mov	@#54, R0			; addr of RMON
+	mov	266(R0), R0			; addr of USR? (in case of set USR NOSWAP)
+	tst	-(R0)				; -2 bytes
+	.setto
+	bcc	10$
+	.print	#MsgSettop
+	.exit
+10$:	mov	R0, RamTop
+	cmp	R0, #122000
+	bhis	20$
+	.print	#MsgNoMemory
+	.exit
+20$:	; and clear it
+	mov	#CpuBinEnd, R0
+	mov	RamTop, R3
+	sub	R0, R3
+	clrb	(R0)+
+	sob	R3, .-2
+
+PriHel:	; print hello message
+	clr	C_KBDCSR			; disable kbd interrupt
+	.print	#MsgHello
+10$:	tstb	C_KBDCSR
+	bpl	10$
+20$:	tst	C_KBDBUF
+	tstb	C_KBDCSR
+	bmi	20$
+
+	; relocate unpacker somewhere higher
+	mov	#Loader, R1
+	mov	#C_LDR_START, R2
+	mov	#C_LDR_LENGTH/2, R3
+	mov	(R1)+, (R2)+
+	sob	R3, .-2
+
+	; relocate packed code just below loader
+	mov	#CpuBinEnd, R1
+	mov	#C_LDR_START, R2
+	mov	#C_ZX0_LENGTH/2, R3
+	mov	-(R1), -(R2)
+	sob	R3, .-2
+
+	; unpack then
+	jmp	@#C_LDR_START
+
+
+RamTop:		.word	0			; top addr of available RAM
+MsgSettop:	.asciz	"? can't use all memory (.settop failed)"
+MsgNoMemory:	.asciz	"? can't allocate memory up to 122000"
+		.even 
+
+MsgHello:	
+	.ascii	<12><15>
+	.ascii	"Neon port of Caves of Noraf BK0010 game"<12><15>
+	.ascii	<12><15>
+	.ascii	"Controls:"<12><15>
+	.ascii	"       Arrows - move"<12><15>
+	.ascii	"        Enter - interact, go down, take object.."<12><15>
+	.ascii	"        Space - wait turn"<12><15>
+	.ascii	"         1..9 - use item from inventory"<12><15>
+	.ascii	" Shift + 1..9 - drop item"<12><15>
+	.ascii	"          AP2 - exit (press it after death)"<12><15>
+	.ascii	<12><15>
+	.ascii	"shift-S - toggle floor animation"<12><15>
+	.ascii	"for attack - move in direction of monster"<12><15>
+	.byte	0
+	.even
+
+Loader:	; unpack main code and jump there
+	mov	#C_ZX0_START, R0
+	mov	#1000, R1
+	mov	R1, SP
+	call	Unpack
+	jmp	(SP)
+
+; ZX0 v2.2 standart unpacker
+; original ZX0 encoder/decoder (c) Einar Saukas & Urusergi
+; PDP11 version by reddie, 02-may-2024 (upd)
+; R0 - source addr, R1 - dest addr
+Unpack:	clr	R2
+	movb	#200, R3
+	sxt	R5
+10$:	call	50$
+	movb	(R0)+, (R1)+
+	sob	R2, .-2
+	aslb	R3
+	bcs	30$
+	call	50$
+20$:	mov	R1, R4
+	add	R5, R4
+	movb	(R4)+, (R1)+
+	sob	R2, .-2
+	aslb	R3
+	bcc	10$
+30$:	mov	#-2, R2
+	call	60$
+	incb	R2
+	bne	.+4
+40$:	return
+	swab	R2
+	mov	R2, R5
+	clrb	R5
+	bisb	(R0)+, R5
+	asr	R5
+	mov	#1, R2
+	bcs	.+6
+	call	80$
+	inc	R2
+	br	20$
+50$:	incb	R2
+60$:	aslb	R3
+	bne	70$
+	movb	(R0)+, R3
+	rolb	R3
+70$:	bcs	40$
+80$:	aslb	R3
+	rol	R2
+	br	60$
+
+LoaderEnd:
+
+; // Main program /////////////////////////////////////////////////////////////
+
+CpuBin:
+	@includebin _acpu_lz.bin
+	.even
+CpuBinEnd:
+
+	.end Start

@@ -1,0 +1,97 @@
+
+;
+; Some global string references
+;
+prompt:	.word s_hint1
+prompt_a: .word 0
+prompt_b: .word 0
+
+;
+; Text strings; mostly messages to be displayed
+;
+
+s_presskey:
+	.byte 3
+	.asciz "Press a key..."
+s_hint1:
+	.byte 3
+	.asciz "Arrows - move, Enter - use/take"
+s_descend:	.asciz "You descend the stairs..."
+s_nouse:
+	.byte 3
+	.asciz "There is nothing useful!"
+s_onfloor:	.asciz "On the floor:"
+s_cantpickup:
+	.byte 3
+	.asciz "No place! Drop or use something!"
+s_taken:
+	.ascii "Taken"
+	.byte 1,0
+s_nodrop:
+	.byte 3
+	.asciz "Nothing to drop!"
+s_dropped:
+	.ascii "Dropped"
+	.byte 1,0
+s_cantuse:
+	.byte 3
+	.ascii "No way to use"
+	.byte 1,0
+s_notnow:
+	.byte 3
+	.asciz "Better save it for later!"
+s_heal:
+	.byte 3
+	.asciz "You feel better!"
+s_recharge:
+	.byte 3
+	.asciz "Your powers are restored!"
+s_youlit:
+	.ascii "You lit the"
+	.byte 1,0
+s_youwield:
+	.ascii "You wield the"
+	.byte 1,0
+s_youwear:
+	.ascii "You wear the"
+	.byte 1,0
+s_youuse:
+	.ascii "You reach for the"
+	.byte 1,0
+s_youwait:
+	.byte 3
+	.asciz "You wait ..."
+s_youattack:
+	.byte 3
+	.ascii "You attack"
+	.byte 2
+	.asciz " the"
+s_attacksyou:
+	.byte 3
+	.asciz "attacks you!"
+s_youkill:
+	.byte 3
+	.ascii "You kill"
+	.byte 2
+	.asciz " the"
+s_killedyou:
+	.byte 3
+	.asciz "killed you!"
+s_youaredead:
+	.byte 3
+	.asciz "You are dead!"
+s_bump:	.asciz "Bump!"
+s_horrible:
+	.ascii "The Egg "
+	.byte 3
+	.asciz "screams as you crush it!"
+s_youcrush:
+	.byte 3
+	.ascii "You crush "
+	.byte 2
+	.asciz "The Egg"
+s_collect:
+	.byte 1
+	.asciz "You have collected the gem"
+.even
+

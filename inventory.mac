@@ -1,0 +1,318 @@
+;
+; Player inventory
+;
+inv_slots = 9.
+inv_textbytes = inv_slots * 20.
+
+inv_refs:
+	.blkw inv_slots
+sb_inone:
+	.asciz " ---- "
+.even
+
+inv_clear:
+	mov #inv_slots, r1
+1$:	call @#inv_clearslot
+	sob r1, 1$
+	ret
+;
+; r0 -- object to find
+;
+; returns:
+;   r1 -- slot index or 0
+;
+inv_find:
+	mov r2, -(sp)
+	mov #inv_refs + <inv_slots * 2>, r2
+	mov #inv_slots, r1
+1$:	cmp -(r2), r0
+	beq 0$
+	sob r1, 1$
+0$:	mov (sp)+, r2
+	ret
+
+; TODO keep it together with the rest of sidebar code
+inv_recolor_sidebar:
+	jsr r5, @#saveregs1
+	mov #inv_refs, r1
+	mov #inv_slots, r2
+	mov #sb_inv, r3
+1$:	mov #1, r5 ; empty slots are blue
+	mov (r1)+, r4
+	beq 2$
+	inc r5 ; objects are green by default
+	bit #is_inuse, @r4
+	beq 2$
+	inc r5 ; objects in use are red
+2$:	movb r5, (r3)
+	movb r5, 10.(r3)
+	add #20., r3
+	sob r2, 1$
+	ret
+; clears the given inventory slot (unchecked)
+; r1 -- slot to clear
+;
+; Returns:
+; r0 -- previous content of the slot
+;
+inv_clearslot:
+	mov r1, -(sp)
+	mov r2, -(sp)
+	mov r1, r0
+	add #'0, r0
+	dec r1
+	call @#inv_slotfromindex
+	mov inv_refs(r1), -(sp)
+	clr inv_refs(r1)
+	movb #1, (r2)+ ; set blue color and (re)generate index	
+	movb r0, (r2)+
+	movb #':, (r2)+
+	mov #sb_inone, r1
+1$:	movb (r1)+, (r2)+
+	bne 1$
+	movb #1, (r2)+
+	mov #8., r1
+2$:	movb #40, (r2)+
+	sob r1, 2$
+	clrb (r2)+
+	trap $_update_sidebar
+	mov (sp)+, r0
+	mov (sp)+, r2
+	mov (sp)+, r1
+	ret
+
+;
+; Calculates the inventory slot reference
+; from the character code ('0'..'9', mod 16.) or direct index
+;
+; If slot code was 0, returns index of -1, zero pointer and N & C flags set
+;
+; r0 -- character code (if used)
+; r1 -- index (if used)
+;
+; Returns:
+; r1 -- slot offset in inv_refs
+; r2 -- slot description pointer in sb_inv
+; Z -- true if is the zero slot
+;
+inv_slotfromchar:
+	mov r0, r1
+	bic #177760, r1 ; strip high bits
+	clr r2
+	dec r1
+	bpl inv_slotfromindex ; a real inv. code
+	ret
+inv_slotfromindex:
+; TODO merge this way with with inv_add (uses r2 as the input index, clobbers r1)
+; inv_slotfromindex2:
+	asl r1 ; x2
+	; x10 (.. x20)
+	asl r1 ; x 4
+	mov r1, r2
+	asl r2 ; x8
+	asl r2 ; x16
+	add r1, r2 ; x20
+	add #sb_inv, r2
+	asr r1 ; back to x 2
+	ret
+;
+; Adds an item to inventory
+;
+; r0 -- item reference
+;
+; Returns:
+; C -- true if was added to inventory
+inv_add:
+	jsr r5, @#saveregs
+	mov r0, r5
+	beq 9$
+	mov #inv_refs, r2
+	mov #inv_slots, r1
+1$:	tst (r2)+
+	beq 2$
+	sob r1, 1$
+9$:	clc
+0$:	jmp @#retreg
+2$:	mov r5, -(r2)
+	bis #is_hidden, @r5
+	; calulate offset in the text buffer (x20)
+	sub #inv_refs, r2 ; x2
+	asl r2 ; x4
+	mov r2, r1
+	asl r2 ; x8
+	asl r2 ; x16
+	add r1, r2 ; x20
+	add #sb_inv, r2
+	; build the description
+	; TODO unified set/clear code for all of this
+	; set color and fill to the end of 1st line
+	movb #2, (r2)+
+	tst (r2)+ ; skip over index part
+	mov #6, r1
+6$:	movb #40, (r2)+ ; fill with spaces
+	sob r1, 6$
+	mov r2, r3 ; keep the pointer to 2nd word of item description
+	; get the 1st word of item description
+	movb ent_name1(r5), r1
+	call @#ent_name_by_index0
+	mov r0, r1
+	call @#strlen
+	sub r0, r2
+	call @#strcpy
+	; get the 2nd word of item description (if any)
+	; place is pre-filled by spaces by inv_clearslot
+	mov r3, r2
+	inc r2 ; skip the terminal zero
+	movb #2, (r2)+ ; green color
+	add #10, r2
+	movb ent_name2(r5), r1
+	call @#ent_name_by_index0
+	mov r0, r1
+	call @#strlen
+	sub r0, r2
+	call @#strcpy
+	;
+5$:	trap $_update_sidebar
+	mov @sp, r0
+	call @#player_notify_take
+	sec
+	br 0$
+;
+; Drops the item from inventory
+;
+; r0 -- slot index
+;
+; Returns:
+; r0 -- pointer to the dropped item desc, or 0 if nothing was dropped
+; C -- 0 if item was NOT dropped, and game state was NOT changed in any way
+inv_drop:
+	jsr r5, @#saveregs
+	mov #s_nodrop, @#prompt
+	mov r0, r1
+	call @#inv_clearslot
+	ccc ; pre-clear carry and other flags for early return
+	tst r0
+	beq 0$ ; nothing to drop
+	movb @#player_x, r1
+	movb @#player_y, r2
+	call @#map_dropnear
+	call @#player_notify_remove
+	call @#player_recalc_stats
+	mov #s_dropped, @#prompt
+	sec
+0$:	mov r0, @sp
+	jmp @#retreg
+;
+; Uses the item from inventory
+;
+; r0 -- slot index, 1..9; 0 means "unwield current weapon, if any"
+;
+; r0 -- pointer to the referenced item desc, or 0 if nothing was used
+; C -- 0 if item was NOT dropped, and game state was NOT changed in any way
+;
+inv_use:
+	mov r1, -(sp)
+	mov r0, -(sp)
+	dec r0
+	bmi inv_ret ; TODO handle unwielding
+	asl r0
+	mov inv_refs(r0), r0
+	beq 0$ ; no item
+	; TODO is this the best way to check?
+	mov @r0, r1
+	;asr r1
+	bit #is_sigil, r1
+	bne inv_use_sigil
+	bit #is_lamp, r1
+	bne inv_uselamp
+	bit #is_weapon, r1
+	bne inv_wield
+	bit #is_armor, r1
+	bne inv_wear_armor
+	bit #is_boots, r1
+	bne inv_wear_boots
+	bit #is_consumable, r1
+	bne inv_consume
+	mov #s_cantuse, @#prompt
+0$:	ccc
+inv_ret:
+	mov (sp)+, r1
+	mov (sp)+, r1 ; NOT A BUG!!! Used to keep the C flag state!
+	ret
+inv_consume:
+	mov r0, r1
+	call @#player_consume
+	mov r0, @#prompt
+	bcc 1$
+	mov @sp, r1
+	call @#inv_clearslot ; was consumed
+	movb ent_dropitem(r0), r0
+	beq 2$
+	dec r0 ; to de-offset, since empty bottle is #0
+	mov r2, -(sp)
+	mov r3, -(sp)
+	mov r0, r3
+	movb @#player_x, r1
+	movb @#player_y, r2
+	call @#ent_create_bytype3
+	; TODO disallow stacking (call @#map_dropnear?)
+	mov (sp)+, r3
+	mov (sp)+, r2
+	clr r0 ; clear the entity ref, since all messages are about the player, not the consumed object
+2$:	sec
+1$:	br inv_ret
+inv_uselamp:
+	mov #s_youlit, @#prompt
+	call @#player_use_light
+	br inv_use_shared
+inv_wear_armor:
+	mov #s_youwear, @#prompt
+	call @#player_wear_armor
+	br inv_use_shared
+inv_wear_boots:
+	mov #s_youwear, @#prompt
+	call @#player_wear_boots
+	br inv_use_shared
+inv_wield:
+	mov #s_youwield, @#prompt
+	call @#player_wield
+inv_use_shared:
+	bis #is_inuse, @r0
+inv_use_once:
+	call @#inv_recolor_sidebar ; TODO merge into update
+; + Blaire - save R0!
+	mov	R0, -(SP)
+	trap $_update_sidebar
+	mov	(SP)+, R0
+; +
+	sec ; game state was changed
+	br inv_ret
+inv_use_sigil:
+	mov #s_youuse, @#prompt
+	call @#player_use_sigil
+	br inv_use_once
+;
+; Processes decaying of items carried by player
+;
+; TODO there should be a generic object removal&cleanup code!
+; @see inv_drop
+;
+inv_decay:
+	jsr r5, @#saveregs
+	mov @#player_lamp, r0
+	beq 0$
+	; TODO "your lamp flickers" when timer is low
+	dec ent_hp_w(r0)
+	bne 0$
+	; remove burnt-out light source
+	clr @r0 ; mark item as "nothing"
+	clr @#player_lamp ; "not in use anymore"
+	call @#inv_find
+	call @#inv_clearslot
+	call @#player_notify_remove
+	call @#player_recalc_stats
+	; FIXME we cannot, since we are called at the beginning of tick
+	; and may override other messages!
+	;mov #s_light_out, @#prompt
+
+0$:	jmp @#retreg

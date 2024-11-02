@@ -1,0 +1,560 @@
+;
+; Generic support for entities
+;
+; Objects: some stuff that can be picked up and possibly used
+; Actors: some active folk who tend to roam the caves
+;
+; WARNING! All entity records should be placed below 100000!
+;
+
+;
+;
+; The basic structure (offsets)
+; 
+;
+ent_flags_w = 0
+ent_hp_w = 2
+ent_x = 4
+ent_y = 5
+ent_armor = 6
+ent_basedmg = 7
+ent_dmgrange = 10
+ent_aggression = 11
+; string indices; typically, adjective and proper name
+ent_name1 = 12
+ent_name2 = 13
+ent_sprite = 14 ; Either a map char or sprite index + 200
+ent_color = 15 ; a map color index; 1..3; high bit shows the x-flip rendering
+ent_enemy = 16 ; Game: pointer to the enemy or 0 if none
+; alternatives for consumables
+; TODO use attr indices (for eggs/sigils?); what about multi-boosts?
+ent_egg_sigil_type = 6 ; armor attribute is reused for sigils and eggs
+ent_heal = 7
+ent_recharge = 10
+; only consumables so far; could remap to 15 when sprites are properly implemented
+; note that it stores index + 1 to disambiguate empty bottle and nothing
+ent_dropitem = 11
+; alternatives for items:
+ent_stance = 11 ; for weapons -- player stance when wielded
+ent_eggmask = 11 ; binary mask of egg types (TODO sigils too)
+; template values that use the same offsets as the game data
+ent_tbasehp = 2
+ent_thpdelta = 3
+ent_tmindepth = 4 ; mimimal depth level for entity to appear
+ent_tmaxdepth = 5 ; maximal depth level for entity to appear
+; TODO 1/x chance if negative
+ent_tmincount = 16 ; minimal # of this type per map
+ent_tdeltacount = 17 ; max amount of randomly added per map
+
+ent_size = 20 ; 16 dec. bytes
+
+ent_maxcount = 40 ; 32-2 (tmp, player) entities per map level max;
+ent_poolsize = ent_maxcount - 2 ; how much can be dynamically allocated
+ent_maxmonsters = 10 ; maximum generated monsters for a map level
+ent_maxcorpses = 5 ; maximum corpses per level
+
+; flags
+is_consumable = 1
+is_lamp = 2
+is_weapon = 4
+is_armor = 10
+is_boots = 20
+is_sigil = 40
+is_egg = 100
+is_player = 200
+is_monster = 400
+is_caster = 1000
+is_humanoid = 2000
+is_fireproof = 4000
+is_acidproof = 10000
+is_fire_element = 4000
+is_acid_element = 10000
+is_dead = 20000 ; either was killed or never was alive (an item)
+is_explosive = 40000 ; if a monster
+is_inuse = 40000 ; valid only for inventory items
+is_hidden = 100000 ; not on the map; could be carried by player, for example
+; combos
+is_usable = is_consumable ! is_lamp ! is_weapon ! is_armor ! is_boots ! is_sigil ! is_egg
+;
+; useful mappings for player attributes
+;
+
+;
+; Destroys all non-hidden entities
+;
+ent_purge:
+	mov r1, -(sp)
+	mov r2, -(sp)
+	mov #ent_pool, r1
+	mov #ent_poolsize, r2
+1$:	tst @r1
+	bmi 2$
+	clr @r1
+2$:	add #ent_size, r1
+	sob r2, 1$
+	mov (sp)+, r2
+	mov (sp)+, r1
+	ret
+;
+; Keeps corpse count at reasonable limit
+; TODO now it just removes the first corpse in entity list
+; if count exceeds the max value; probably, we should be more strict
+;
+ent_limit_corpses:
+	jsr r5, @#saveregs
+	clr r0
+	mov #ent_pool, r1
+	mov #ent_poolsize, r2
+	clr r3
+1$:	bit #is_monster, @r1
+	beq 2$
+	bit #is_dead, @r1
+	beq 2$
+	inc r3
+	tst r0
+	bne 2$
+	mov r1, r0
+2$:	add #ent_size, r1
+	sob r2, 1$
+	cmp #ent_maxcorpses, r3
+	bhis 10$
+	clr @r0
+10$:	jmp @#retreg
+; Allocates a new entity if there is available slot
+;
+; result: r0 -- address of new entity or zero if all slots are used
+;
+
+ent_alloc0:
+	mov r1, -(sp)
+	mov #ent_pool, r0
+	mov #ent_poolsize, r1
+1$:	tst @r0
+	beq 2$
+	add #ent_size, r0
+	sob r1, 1$
+	clr r0
+2$:	mov (sp)+, r1
+	ret
+;
+; Creates a simple entity 
+;
+; r1 -- x
+; r2 -- y
+; r3 -- entity type OR pointer (for *_ptr version)
+;
+; returns:
+;
+; r1 -- unchanged(x)
+; r2 -- unchanged(y)
+; r3 -- new entity
+; TODO dont forget to multiply light source life x100!
+ent_create_bytype3:
+	; multiply by record size (16.)
+	bic #177600, r3 ; clear flags
+	asl r3
+	asl r3
+	asl r3
+	asl r3
+	add #etypes_list, r3
+ent_create_bytype_ptr3:
+	jsr r5, @#saveregs
+	call @#ent_alloc0
+	mov r0, r4
+	beq 10$ ; all slots are used ...
+	; move data
+	mov (r3)+, r5
+	mov r5, (r4)+ ; flags
+	; HP calculations are deferred, save pointer and move forward
+	mov r3, r0
+	cmp (r3)+, (r4)+
+	; location
+	movb r1, (r4)+ ; x
+	movb r2, (r4)+ ; y
+	; back to HP
+	clr r2
+	bisb (r0)+, r2 ; base HP
+	clr r1
+	bisb (r0), r1 ; HP range
+	inc r1 ; pre-bias for asymmetric range of randx
+	call @#randx
+	add r0, r2
+	bit #is_lamp, r5
+	beq 1$
+	swab r2 ; x128 HP for light sources (it is their timer for burning out)
+	ror r2
+1$:	mov r2, -4(r4) ; HP
+	;
+	tst (r3)+ ; skip depth (FIXME!!!)
+	;
+	mov (r3)+, (r4)+ ; armor/basedmg
+	mov (r3)+, (r4)+ ; dmgrange/aggression
+	mov (r3)+, (r4)+ ; names
+	mov (r3)+, (r4)+ ; sprite
+	clr (r4)+ ; no enemy at the spawn time (count range in the template)
+	;
+	sub #ent_size, r4
+	; fake egg randomization hack
+	bit #is_egg, @r4
+	beq 10$
+	bit #is_sigil, @r4
+	beq 10$
+	mov #6., r1
+	call @#randx
+	add r0, ent_sprite(r4)
+10$:	mov r4, 6(sp)
+	jmp @#retreg
+;
+; Drops a number of empty bottles or various items
+;
+; r0 -- count; if <= 0, there will be nothing
+; r3 -- item type
+;
+; TODO proper drop randomizer: >=1+ max count, <=-1 -- 1/x chance
+; the same, but from entity template
+
+;ent_dropbottles$:
+;	clr r3 ; bottle is entity type #0
+;ent_dropitems$:
+;	mov r0, r1
+;	beq 0$
+;	bmi 0$
+;	call @#randx
+;	mov r0, r4
+;	beq 0$
+ent_force_dropitems$:
+99$:	mov r3, -(sp)
+1$:	call @#map_find_free_tile
+	mov @sp, r3
+	call @#ent_create_bytype3
+	sob r4, 1$
+	tst (sp)+
+	ret
+; will drop r4 items of type r3
+;ent_force_dropitems$ = 99$
+;
+; TODO item count depending on level
+;
+;
+map_min_ents = 4
+map_ents_delta = 8.
+ent_drop_level_items$:
+	call @#ent_drop_required_items$
+	; FIXME that should be automated! along with eggs, sigils, etc
+	; if player health is below max, generate at least one healing potion
+	cmp @#player_hp, @#player_maxhp
+	bge 4$
+	mov #ET_RED_POTION, r3
+	mov #1, r4 ; one shall be enough
+	call @#ent_force_dropitems$
+4$:	tst @#player_lamp
+	bne 6$
+	mov #ET_TORCH, r3
+	mov #1, r4
+	call @#ent_force_dropitems$
+6$:	mov #map_ents_delta, r1
+	call @#randx
+	add #map_min_ents, r0
+	mov r0, -(sp)
+	mov @#map_depth, r0
+	asr r0
+	asr r0
+	asr r0
+	add r0, @sp
+1$:	mov #etypes_count, r1
+	call @#randx
+	asl r0
+	asl r0
+	asl r0
+	asl r0
+	add #etypes_list, r0
+	; check depth range
+	cmpb ent_tmindepth(r0), @#map_depth
+	bhi 1$
+	cmpb ent_tmaxdepth(r0), @#map_depth
+	blo 1$
+	; depth range passed, now check possible count
+	mov r0, -(sp) ; store the type
+	movb ent_tmincount(r0), r4
+	bpl 5$
+	; negative -- one in X chance
+	mov r4, r1
+	neg r1
+	call @#randx
+	mov #1, r4 ; amount to place, if any
+	tst r0
+	beq 2$
+	tst (sp)+
+	br 1$
+5$:	movb ent_tdeltacount(r0), r1
+	inc r1 ; somewhat dirty trick to compenaste for the randx range
+	call @#randx
+2$:	add r0, r4
+	beq 99$
+	sub r4, 2(sp)
+	bcc 3$
+	; clamp max count and dont drop anything else
+	add 2(sp), r4
+	beq 99$ ; FIXME negative numbers
+	clr 2(sp)
+3$:	call @#map_find_free_tile
+	mov @sp, r3
+	call @#ent_create_bytype_ptr3
+	sob r4, 3$
+99$:	tst (sp)+
+	dec @sp
+	bpl 1$
+9$:	tst (sp)+
+	ret
+;
+; Drops the item(s) required for game progress;
+; These include potions, eggs, sigils, boots on acid/lava levels 
+;
+; filter masks:
+f_unique = 1 ; will be NOT generated if player already has one in posession
+f_once = 2 ; will be NOT generated if player has taken the item previously
+f_essential = 4 ; will be ALWAYS generated at max depth and deeper; f_unique/f_once sill apply
+; format (offsets)
+r_type = 0 ; entity type; 0 terminates the list
+r_filter = 1 ; combined filter mask
+r_idmask_w = 2;  used to check what it is if unique
+r_mindepth = 4 ; minimal depth to appear, inclusive
+r_maxdepth = 5 ; maximal depth to appear, inclusive (also see the f_essential)
+r_count = 6 ; max. count of the item; negative means 1/x chance, zero -- always generate if passed the filter
+r_version = 7 ; variance; this is for eggs and sigils(?); adds # to first name and bitmask(?)
+
+; ... but so far, we will go just with the egg/gem hack
+ent_drop_required_items$:
+	mov #etypes_eggs, r4
+	mov #6, r5 ; there are 6 egg types
+1$:	bitb ent_eggmask(r4), @#player_eggs
+	bne 9$ ; already got this type
+	cmpb @#map_depth, ent_tmindepth(r4)
+	blo 9$ ; not deep enough to find this Egg
+	call @#map_find_free_tile
+	mov r4, r3
+	call @#ent_create_bytype_ptr3
+9$:	add #ent_size, r4
+	sob r5, 1$
+	; drop a gem
+	call @#map_find_free_tile
+	mov #ET_GEM, r3
+	call @#ent_create_bytype3
+	; randomly alter by type
+	mov #3, r1
+	call @#randx
+	add r0,ent_name1(r3) ; assumes that gem names are sequential
+	ret
+
+;
+; Finds a first entity at given location
+;
+; r1 -- x
+; r2 -- y
+;
+; Returns:
+; r0 -- entity pointer or zero,if nothing is found
+ent_find_ignoreplayer0:
+	mov #ent_pool, r0
+	mov r5, -(sp)
+	mov #ent_poolsize, r5
+	br ent_find_shared$$
+ent_find0:
+	mov #ent_player, r0
+	mov r5, -(sp)
+	mov #ent_poolsize + 1, r5
+ent_find_shared$$:
+1$:	tst @r0
+	beq 2$
+	bmi 2$
+	cmpb ent_x(r0), r1
+	bne 2$
+	cmpb ent_y(r0), r2
+	beq 0$ ; found!
+2$:	add #ent_size, r0
+	sob r5, 1$
+	clr r0
+0$:	mov (sp)+, r5
+	ret
+
+;
+; R1 -- index
+;
+; Returns:
+; R0 -- pointer
+;
+ent_name_by_index0:
+	mov r1, -(sp)
+	beq 9$ ; string 0 is a special case (empty), so we use a small hack
+	mov #ent_strings, r0
+1$:	tstb @r0
+	beq 0$ ; no more strings
+	dec r1
+	bmi 0$ ; matching index
+2$:	tstb (r0)+ ; skip this string
+	bne 2$
+	br 1$
+9$:	mov #ent_strings + 1, r0
+0$:	mov (sp)+, r1
+	ret
+;
+; Return a full name for the entity
+;
+; r0 -- pointer to the entity
+;
+; Result:
+;
+; r1 -- first name string (e.g. "Cave")
+; r2 -- second name string (e.g. "Rat")
+;
+ent_get_full_name12:
+	mov r0, -(sp)
+	beq 1$
+	mov r0, r2
+	movb ent_name2(r0), r1
+	call @#ent_name_by_index0
+	movb ent_name1(r2), r1
+	mov r0, r2
+	call @#ent_name_by_index0
+	mov r0, r1
+0$:	mov (sp)+, r0
+	ret
+1$:	mov #ent_strings, r1
+	mov r1, r2
+	br 0$
+; static data (descs)
+
+; Strings used for name1/name2 fields
+ent_strings:
+	.asciz " "
+	.asciz "Empty"
+	.asciz "Bottle"
+	.asciz "Red"
+	.asciz "Blue"
+	.asciz "Potion"
+	.asciz "Bronze"
+	.asciz "Iron"
+	.asciz "Steel"
+	.asciz "Quartz"
+	.asciz "Dnatog"
+	.asciz "Ixtorn"
+	.asciz "Dagger"
+	.asciz "Sword"
+	.asciz "Mace"
+	.asciz "Blade"
+	.asciz "Mauler"
+	.asciz "Torch"
+	.asciz "Lamp"
+	.asciz "Oil"
+	.asciz "Naptha"
+	.asciz "Bone"
+	.asciz "Cave"
+	.asciz "Flesh"
+	.asciz "Scaly"
+	.asciz "Fire"
+	.asciz "Rat"
+	.asciz "Snake"
+	.asciz "Spider"
+	.asciz "Hog"
+	.asciz "Worm"
+	.asciz "Lizard"
+	.asciz "Kobold"
+	.asciz "Golem"
+	.asciz "Zombie"
+	.asciz "Cripple"
+	.asciz "Creeper"
+	.asciz "Imp"
+	.asciz "Priest"
+	.asciz "The"
+	.asciz "Undying"
+	.asciz "Brave"
+	.asciz "Hero"
+	.asciz "Corpse"
+	.asciz "Stone"
+	.asciz "Warrior"
+	.asciz "Boots"
+	.asciz "Ashen"
+	.asciz "Armor"
+	.asciz "Acid"
+	.asciz "Cloud"
+	.asciz "Jagged"
+	.asciz "Egg"
+	.asciz "Blood"
+	.asciz "Crown"
+	.asciz "Sigil"
+	.asciz "Ice"
+	.asciz "Death"
+	.asciz "Void"
+	.asciz "Ash"
+	.asciz "Ruby"
+	.asciz "Topaz"
+	.asciz "Beryl"
+	.asciz "Glass"
+	.byte 0
+.even
+S_  = 0.
+S_EMPTY = 1.
+S_BOTTLE = 2.
+S_RED = 3.
+S_BLUE = 4.
+S_POTION = 5.
+S_BRONZE = 6.
+S_IRON = 7.
+S_STEEL = 8.
+S_QUARTZ = 9.
+S_DNATOG = 10.
+S_IXTORN = 11.
+S_DAGGER = 12.
+S_SWORD = 13.
+S_MACE = 14.
+S_BLADE = 15.
+S_MAULER = 16.
+S_TORCH = 17.
+S_LAMP = 18.
+S_OIL = 19.
+S_NAPHTA = 20.
+S_BONE = 21.
+S_CAVE = 22.
+S_FLESH = 23.
+S_SCALY = 24.
+S_FIRE = 25.
+S_RAT = 26.
+S_SNAKE = 27.
+S_SPIDER = 28.
+S_HOG = 29.
+S_WORM = 30.
+S_LIZARD = 31.
+S_KOBOLD = 32.
+S_GOLEM = 33.
+S_ZOMBIE = 34.
+S_CRIPPLE = 35.
+S_CREEPER = 36.
+S_IMP = 37.
+S_PRIEST = 38.
+S_FRAIL = 39.
+S_IMMORTAL = 40.
+S_BRAVE = 41.
+S_HERO = 42.
+S_CORPSE = 43.
+S_STONE = 44.
+S_WARRIOR = 45.
+S_BOOTS = 46.
+S_ASHEN = 47.
+S_ARMOR = 48.
+S_ACID = 49.
+S_CLOUD = 50.
+S_JAGGED = 51.
+S_EGG = 52.
+S_BLOOD = 53.
+S_CROWN = 54.
+S_SIGIL = 55.
+S_ICE = 56.
+S_DEATH = 57.
+S_VOID = 58.
+S_ASH = 59.
+S_RUBY = 60.
+S_TOPAZ = 61.
+S_BERYL = 62.
+S_GLASS = 63.
+
+

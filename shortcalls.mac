@@ -1,0 +1,50 @@
+;
+; Compactify calls to commonly used procedures by the TRAP instruction
+;
+
+; note that TRAPs with high bit set are the "interpret" calls, and get the script address in the R5
+; TODO
+trap_handler:
+	mov @sp, 2(sp) ; move return address over saved PSW, so it will return like the common call
+	mov r5, @sp
+	mov r4, -(sp)
+	mov r3, -(sp)
+	mov r2, -(sp)
+	mov r1, -(sp)
+	; r0 is not saved at the call, since it is the common return value register
+	; find the actual call address
+	mov 12(sp), r5 ; return address
+	clr r1
+	bisb -2(r5), r1 ; TODO negs
+	aslb r1
+;1$:	br 1$
+	mov ctable(r1), -(sp)
+	mov 2(sp), r1
+	call @(sp)+ ; call handler as coroutine
+	mov (sp)+, r1
+	mov (sp)+, r2
+	mov (sp)+, r3
+	mov (sp)+, r4
+	mov (sp)+, r5
+	ret
+;
+; table of procudures to be handled by TRAP calls
+;
+; first 8.(10) slots are special, they are reserved for the most used routines, so they can be easily recalled
+ctable:	.word 0 ; 0 - .
+	.word 0 ; 1 - mass (chained) call
+	.word 0 ; 2 - .
+$_randx = 3
+	.word randx ; 3 - .
+$_crand = 4
+	.word crand$ ; 4 - about 12 calls
+$_rand_bool = 5	
+	.word rand_bool ; 5 - 
+	.word 0 ; 6 - 
+	.word 0 ; 7 - set_prompt(25) TODO move to negs? (use trap # as the prompt index) <- the same for strings? numeric consts?
+$_update_sidebar = 10
+	.word update_sidebar ; 10 - . (8)
+
+; ent_create_bytype3; (8)
+; randx ; (13)
+; rand_bool ; (7)

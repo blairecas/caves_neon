@@ -1,0 +1,1 @@
+start ..\..\neon\neonbtl /autostart /disk0:..\caves_neon\release\caves.dsk /boot1

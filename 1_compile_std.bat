@@ -30,8 +30,8 @@ if %ERRORLEVEL% NEQ 0 ( exit /b )
 php -f ../scripts/lst2bin.php _bmain.lst ./release/caves.sav sav
 if %ERRORLEVEL% NEQ 0 ( exit /b )
 
-..\scripts\rt11dsk.exe d neon.dsk .\release\caves.sav >NUL
-..\scripts\rt11dsk.exe a neon.dsk .\release\caves.sav >NUL
+..\scripts\rt11dsk d .\release\caves.dsk caves.sav >NUL
+..\scripts\rt11dsk a .\release\caves.dsk .\release\caves.sav >NUL
 
 del _acpu.mac
 del _acpu.lst
@@ -41,6 +41,6 @@ del _bmain.mac
 del _bmain.lst
 
 del serial.log
-run_neonbtl.bat
+2_run_neonbtl.bat
 
 echo.
